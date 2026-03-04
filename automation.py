@@ -361,7 +361,7 @@ class ADB:
         #     time.sleep(1)
         # self.screen_shot(name="_state_check")
 
-        state = self.get_state()
+        # state = self.get_state()
 
 
         self.tap(10,415)
@@ -889,6 +889,54 @@ class ADB:
             self.tap(410,910) # 출정
             time.sleep(2)
             return True
+
+
+    def get_hero(self) :
+
+        self.tap(10,415)
+        time.sleep(1)
+        self.drag_with_adb(170, 625, 170, 275, duration_ms=500)
+        time.sleep(0.5)
+        self.screen_shot(name="_hero")
+
+        result = self.get_ocr_raw(file_name="capture_hero.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1)
+        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1, merge=True)
+
+        processed_result
+
+
+        target_avg = None  # 결과를 담을 변수
+
+        for i in range(len(processed_result) - 1):
+            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
+            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
+
+            if "고급모" in curr_text and "무료모" in next_text:
+                curr_val = float(processed_result[i][2])      # 고급모집의 2번 인덱스
+                print(curr_val)
+                next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
+                target_avg = (curr_val + next_val) / 2.0
+                self.tap(305, target_avg) # 모집 버튼 누르기
+                time.sleep(1)
+                self.tap(150, 630) # 고급 모집 버튼 누르기
+                time.sleep(10) # 뽑기 애니메이션 기다림림
+                self.back()
+                time.sleep(1)
+                self.back()
+                break
+            elif "에픽모" in curr_text and "무료모" in next_text:
+                curr_val = float(processed_result[i][2])      # 에픽픽모집의 2번 인덱스
+                print(curr_val)
+                next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
+                target_avg = (curr_val + next_val) / 2.0
+                self.tap(305, target_avg) # 모집 버튼 누르기
+                time.sleep(1)
+                self.tap(150, 900) # 고급 모집 버튼 누르기
+                time.sleep(10) # 뽑기 애니메이션 기다림림
+                self.back()
+                time.sleep(1)
+                self.back()
+                break
 
         
 
@@ -1450,6 +1498,12 @@ def run_one_adb(itr, adb):
                 time.sleep(10)
 
             # timer = time.time()
+
+
+        
+        if loop_count.get(itr, 0) % 20 == 0 :
+            adb.get_hero()
+            time.sleep(1)
 
         # 이 adb의 루프 카운트 +1 (각자 따로 돔)
         loop_count[itr] = loop_count.get(itr, 0) + 1
