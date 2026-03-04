@@ -923,6 +923,7 @@ class ADB:
                 self.back()
                 time.sleep(1)
                 self.back()
+                print(f"adb{itr} 고급 모집 완료")
                 break
             elif "에픽모" in curr_text and "무료모" in next_text:
                 curr_val = float(processed_result[i][2])      # 에픽픽모집의 2번 인덱스
@@ -936,7 +937,50 @@ class ADB:
                 self.back()
                 time.sleep(1)
                 self.back()
+                print(f"adb{itr} 에픽 모집 완료")
                 break
+
+        time.sleep(1)
+        self.tap(355,415) # 영웅 창 닫기
+
+
+    def get_supply(self) :
+
+        self.tap(10,415)
+        time.sleep(1)
+        self.drag_with_adb(170, 625, 170, 275, duration_ms=500)
+        time.sleep(0.5)
+        self.screen_shot(name="_supply")
+
+        result = self.get_ocr_raw(file_name="capture_supply.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1)
+        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1, merge=True)
+
+        processed_result
+
+        target_avg = None  # 결과를 담을 변수
+
+        for i in range(len(processed_result) - 1):
+            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
+            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
+
+            if "창고보급" in curr_text and "완료료" in next_text:
+                curr_val = float(processed_result[i][2])      # y좌표
+                print(curr_val)
+                next_val = float(processed_result[i + 1][2])  # y좌표
+                target_avg = (curr_val + next_val) / 2.0
+                self.tap(305, target_avg) # 보급품 수령 버튼튼
+                time.sleep(1)
+                self.tap(270,420)
+                time.sleep(1)
+                self.tap(275,345) # 수령 버튼
+                time.sleep(10)
+                self.tap(270,420)
+                print(f"adb{itr} 보급품 수령 완료료")
+                break
+
+
+        time.sleep(1)
+        self.tap(355,415) # 영웅 창 닫기
 
         
 
@@ -1447,8 +1491,8 @@ def run_one_adb(itr, adb):
 
             check_exception_case(adb)
 
-            adb.get_money()
-            time.sleep(1)
+            # adb.get_money()
+            # time.sleep(1)
 
             # 현재 위치 판단
             adb.screen_shot(name="_inout")
@@ -1500,10 +1544,26 @@ def run_one_adb(itr, adb):
             # timer = time.time()
 
 
-        
-        if loop_count.get(itr, 0) % 20 == 0 :
+        if loop_count.get(itr, 0) % 30 == 0 :
+
+            print(f"adb{itr} loop 20 진입")
+
+            if reconnect_check == True :
+                adb.tap(380,595) # reconnect
+                time.sleep(10)
+
+            check_exception_case(adb)
+
+            adb.get_money()
+            time.sleep(1)
+
             adb.get_hero()
             time.sleep(1)
+
+            adb.get_supply()
+            time.sleep(1)
+
+
 
         # 이 adb의 루프 카운트 +1 (각자 따로 돔)
         loop_count[itr] = loop_count.get(itr, 0) + 1
