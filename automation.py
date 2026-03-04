@@ -982,6 +982,29 @@ class ADB:
         time.sleep(1)
         self.tap(355,415) # 영웅 창 닫기
 
+
+
+    def get_quest(self) :
+
+        self.tap(30,790) # 퀘스트 버튼
+        time.sleep(1)
+        self.screen_shot(name="_quest")
+
+        result = self.get_ocr_raw(file_name="capture_quest.png", x_min=360, x_max=530, y_min=360, y_max=750, y_threshold=10, scale=1)
+        processed_result = self.process_ocr(result=result, x_min=360, x_max=530, y_min=360, y_max=750, y_threshold=10, scale=1, merge=True)
+
+        for item in processed_result:
+            if item[0] == "수령":
+                x = item[1]
+                y = item[2]
+                self.tap(x,y)
+                time.sleep(3)
+                self.back()
+                time.sleep(1)
+                break 
+
+        self.back() # 아무것도 수령할거 없는 경우
+
         
 
 
@@ -1375,6 +1398,18 @@ def check_exception_case(adb) :
         time.sleep(3)
 
 
+def check_abnormal(adb) :
+
+    while True :
+
+        # 비정상 화면 해결
+        state = adb.get_state()
+        if state["action"] == False :
+            break
+        time.sleep(1)
+
+
+
 def run_one_adb(itr, adb):
     """한 디바이스에 대한 작업 (병렬 실행용). 에러 시 로그만 하고 넘어감."""
     try:
@@ -1390,14 +1425,8 @@ def run_one_adb(itr, adb):
         elif reconnect_check == False :
 
 
-            while True :
-
-                # 비정상 화면 해결
-                state = adb.get_state()
-                if state["action"] == False :
-                    break
-                time.sleep(1)
-
+            
+            check_abnormal(adb)
 
             
             check_exception_case(adb)
@@ -1552,16 +1581,29 @@ def run_one_adb(itr, adb):
                 adb.tap(380,595) # reconnect
                 time.sleep(10)
 
+            check_abnormal(adb)
+
             check_exception_case(adb)
 
             adb.get_money()
             time.sleep(1)
 
+            check_abnormal(adb)
+
             adb.get_hero()
             time.sleep(1)
 
+            check_abnormal(adb)
+
             adb.get_supply()
             time.sleep(1)
+
+            check_abnormal(adb)
+
+            adb.get_quest()
+            time.sleep(1)
+
+
 
 
 
