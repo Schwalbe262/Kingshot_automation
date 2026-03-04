@@ -769,6 +769,7 @@ class ADB:
             text_nospace = re.sub(r'[^a-zA-Z0-9]', '', str(text))
             match_m = re.match(r"(\d+)\s*M", text_nospace, re.IGNORECASE)
             match_k = re.match(r"(\d+)\s*K", text_nospace, re.IGNORECASE)
+
             if match_m:
                 number_str = match_m.group(1)
                 number = float(number_str) / 10  # 104 -> 10.4
@@ -1200,18 +1201,18 @@ def init_bluestacks_and_adbs():
         adb.start_kingshot()
         time.sleep(1)
 
-    time.sleep(10)
+    time.sleep(15)
 
     success = True
 
     # 어플리케이션 정상 실행 여부 판단
-    for adb in adbs:
+    for iteration, adb in enumerate(adbs):
         adb.screen_shot(name="_initialize")
         result = adb.get_ocr_raw(file_name="capture_initialize.png", x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1)
         processed_result = adb.process_ocr(result=result, x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1, merge=False)
-        result = adb.has_keywords(processed_result, ["Store", "시스템"], min_count=1)
+        result = adb.has_keywords(processed_result, ["Store", "store", "시스템"], min_count=2)
         if result:
-            print("실행 실패 감지")
+            print(f"adb{iteration}에서 실행 실패 감지")
             success = False
         time.sleep(1)
 
@@ -1376,13 +1377,13 @@ def run_one_adb(itr, adb):
                 print(build1, build2, unit1, unit2, unit3)
 
 
-                if unit1 == 1 and adb.infantry == False :
+                if unit1 == 1 and adb.infantry == False and (build1 != 1 and build2 != 1) :
                     adb.unit_training(unit="보병")
                     # print("보병 훈련 시작")
-                if unit2 == 1 and adb.calvary == False :
+                if unit2 == 1 and adb.calvary == False and (build1 != 1 and build2 != 1) :
                     adb.unit_training(unit="기병")
                     # print("기병 훈련 시작")
-                if unit3 == 1 and adb.archer == False :
+                if unit3 == 1 and adb.archer == False and (build1 != 1 and build2 != 1) :
                     adb.unit_training(unit="궁병")
                     # print("궁병 훈련 시작")
 
@@ -1413,8 +1414,8 @@ def run_one_adb(itr, adb):
 
             bread_value, wood_value, stone_value, iron_value = adb.resource_remain()
             print(f"adb{itr} : {bread_value/1e+6}, {wood_value/1e+6}, {stone_value/1e+6}, {iron_value/1e+6}")
-            stone_value = stone_value / 5
-            iron_value = iron_value / 20
+            stone_value = stone_value * 5
+            iron_value = iron_value * 20
 
             time.sleep(3)
 
