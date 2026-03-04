@@ -963,7 +963,7 @@ class ADB:
             curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
             next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
 
-            if "창고보급" in curr_text and "완료료" in next_text:
+            if "창고보급" in curr_text and "완료" in next_text:
                 curr_val = float(processed_result[i][2])      # y좌표
                 print(curr_val)
                 next_val = float(processed_result[i + 1][2])  # y좌표
