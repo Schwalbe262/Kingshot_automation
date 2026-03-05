@@ -487,10 +487,16 @@ class ADB:
 
                 self.screen_shot(name="_research")
 
-                result = self.get_ocr_raw_advanced(file_name="capture_research.png", x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, binary_threshold=140)
+                result = self.get_ocr_raw_advanced(file_name="capture_research.png", x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, binary_threshold=170)
                 processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, merge=False)
 
                 position = pattern_search(processed_result)
+
+                print("========== 연구 큐 인식   ==========")
+                print(processed_result)
+                print("================================")
+                print(position)
+                print("================================")
 
                 if position == [] :
                     continue
@@ -504,7 +510,7 @@ class ADB:
                         time.sleep(1)
 
                         self.screen_shot(name="_research_check")
-                        result = self.get_ocr_raw_advanced(file_name="capture_research_check.png", x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, binary_threshold=140)
+                        result = self.get_ocr_raw_advanced(file_name="capture_research_check.png", x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, binary_threshold=170)
                         processed_result = self.process_ocr(result=result, x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, merge=False)
                         
 
@@ -521,7 +527,7 @@ class ADB:
 
                         if button_flag == False:
                             self.screen_shot(name="_research_state")
-                            result = self.get_ocr_raw_advanced(file_name="capture_research_state.png", x_min=65, x_max=230, y_min=5, y_max=45, y_threshold=10, scale=3, binary_threshold=140)
+                            result = self.get_ocr_raw_advanced(file_name="capture_research_state.png", x_min=65, x_max=230, y_min=5, y_max=45, y_threshold=10, scale=3, binary_threshold=170)
                             processed_result = self.process_ocr(result=result, x_min=65, x_max=230, y_min=5, y_max=45, y_threshold=10, scale=3, merge=False)
                             flag = False
                             for item in processed_result:
@@ -593,7 +599,7 @@ class ADB:
             time.sleep(1)
             self.tap(100,85)
             time.sleep(1)
-            self.drag_with_adb(270, 300, 270, 400, duration_ms=300)
+            # self.drag_with_adb(270, 300, 270, 400, duration_ms=300)
 
         result = research_try()
 
@@ -604,7 +610,7 @@ class ADB:
             time.sleep(1)
             self.tap(270,85)
             time.sleep(1)
-            self.drag_with_adb(270, 400, 270, 400, duration_ms=300)
+            # self.drag_with_adb(270, 400, 270, 400, duration_ms=300)
 
         result = research_try()
 
@@ -615,7 +621,7 @@ class ADB:
             time.sleep(1)
             self.tap(440,85)
             time.sleep(1)
-            self.drag_with_adb(270, 400, 270, 400, duration_ms=300)
+            # self.drag_with_adb(270, 400, 270, 400, duration_ms=300)
 
         result = research_try()
 
@@ -1297,7 +1303,7 @@ class ADB:
         time.sleep(1)
         self.screen_shot(name="_union_research")
 
-        result = self.get_ocr_raw_advanced(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, binary_threshold=140)
+        result = self.get_ocr_raw_advanced(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, binary_threshold=170)
         processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
 
 
@@ -1314,7 +1320,7 @@ class ADB:
                 self.tap(300, target_avg) # 연맹 기부 버튼 누르기
                 time.sleep(1)
                 self.tap(400, 920) # 연맹 버튼 누르기
-                time.sleep(5)
+                time.sleep(3)
                 self.tap(420, 700) # 연맹 과학 기술 버튼 누르기
                 time.sleep(1)
                 break
@@ -1325,9 +1331,13 @@ class ADB:
             return False
 
 
+        time.sleep(1)
+        self.tap(510,530)
+        time.sleep(1)
+
         self.screen_shot(name="_union_research_queue")
 
-        result = self.get_ocr_raw_advanced(file_name="capture_union_research_queue.png", x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, binary_threshold=140)
+        result = self.get_ocr_raw_advanced(file_name="capture_union_research_queue.png", x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, binary_threshold=170)
         processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, merge=False)
 
         pattern = r"^\d+/\d+$"
@@ -1346,7 +1356,7 @@ class ADB:
                     time.sleep(1)
 
                     self.screen_shot(name="_union_done")
-                    result = self.get_ocr_raw_advanced(file_name="capture_union_done.png", x_min=295, x_max=475, y_min=690, y_max=820, y_threshold=10, scale=3, binary_threshold=140)
+                    result = self.get_ocr_raw_advanced(file_name="capture_union_done.png", x_min=295, x_max=475, y_min=690, y_max=820, y_threshold=10, scale=3, binary_threshold=170)
                     processed_result = self.process_ocr(result=result, x_min=295, x_max=475, y_min=690, y_max=820, y_threshold=10, scale=3, merge=False)
 
                     for item in processed_result:
