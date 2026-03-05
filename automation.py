@@ -383,7 +383,7 @@ class ADB:
         # 궁병
         unit3 = check_each_queue(self, 60, 270, 505, 555)
 
-        # 과학기술술
+        # 과학기술
         research = check_each_queue(self, 60, 270, 610, 640)
 
 
@@ -483,58 +483,81 @@ class ADB:
 
         def research_try() :
 
-            for attempt in range(5):
+            for attempt in range(1):
 
                 self.screen_shot(name="_research")
 
                 result = self.get_ocr_raw_advanced(file_name="capture_research.png", x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, binary_threshold=140)
                 processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, merge=False)
 
-                x, y = pattern_search(processed_result)
+                position = pattern_search(processed_result)
 
-                if x != 0 and y != 0:
-                    self.tap(x, y)
-                    time.sleep(1)
+                if position == [] :
+                    continue
 
-                    self.screen_shot(name="_research_check")
-                    result = self.get_ocr_raw_advanced(file_name="capture_research_check.png", x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, binary_threshold=140)
-                    processed_result = self.process_ocr(result=result, x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, merge=False)
-                    
+                for x, y in position:
 
-                    x_check = 0
-                    y_check = 0
+                    print(x, y)
 
-                    for item in processed_result:
-                        if "연구" in str(item[0]):
-                            x_check = item[1]
-                            y_check = item[2]
-                            break
-                    
-                    print("========== 연구 버튼 인식 ==========")
-                    print(processed_result)
-                    print(x_check, y_check)
-                    print("================================")
+                    if x != 0 and y != 0:
+                        self.tap(x, y)
+                        time.sleep(1)
 
-                    if x_check == 0 and y_check == 0:
-                        break
+                        self.screen_shot(name="_research_check")
+                        result = self.get_ocr_raw_advanced(file_name="capture_research_check.png", x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, binary_threshold=140)
+                        processed_result = self.process_ocr(result=result, x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, merge=False)
+                        
 
-                    self.tap(x_check, y_check)  # 연구 버튼
-                    time.sleep(1)
+                        x_check = 0
+                        y_check = 0
+                        button_flag = False
+
+                        for item in processed_result:
+                            if "연구" in str(item[0]):
+                                x_check = item[1]
+                                y_check = item[2]
+                                button_flag = True
+                                break
+
+                        if button_flag == False:
+                            self.screen_shot(name="_research_state")
+                            result = self.get_ocr_raw_advanced(file_name="capture_research_state.png", x_min=65, x_max=230, y_min=5, y_max=45, y_threshold=10, scale=3, binary_threshold=140)
+                            processed_result = self.process_ocr(result=result, x_min=65, x_max=230, y_min=5, y_max=45, y_threshold=10, scale=3, merge=False)
+                            flag = False
+                            for item in processed_result:
+                                if "과학" in str(item[0]):
+                                    flag = True
+                                    break
+                            if flag == False :
+                                time.sleep(1)
+                                self.back()
                             
-                    self.tap(455, 895)  # 연맹 협조
-                    time.sleep(1)
-                    self.back()
-                    time.sleep(1)
-                    print(f"adb{self.itr} 과학기술 연구 시작 (시도 {attempt+1})")
-                    return True
-                else:
-                    time.sleep(1)
-                    self.drag_with_adb(270, 530, 270, 450, duration_ms=100)
-                    time.sleep(1)
+                        elif button_flag == True:
+                            print("========== 연구 버튼 인식 ==========")
+                            print(processed_result)
+                            print(x_check, y_check)
+                            print("================================")
+
+                            self.tap(x_check, y_check)  # 연구 버튼
+                            time.sleep(1)
+                                    
+                            self.tap(455, 895)  # 연맹 협조
+                            time.sleep(1)
+                            self.back()
+                            time.sleep(1)
+                            print(f"adb{self.itr} 과학기술 연구 시작 (시도 {attempt+1})")
+                            return True
+                # else:
+                    # pass
+                    # time.sleep(1)
+                    # self.drag_with_adb(270, 530, 270, 450, duration_ms=100)
+                    # time.sleep(1)
             return False
         
 
         def pattern_search(processed_result) :
+
+            position = []
 
             x = 0
             y = 0
@@ -543,9 +566,9 @@ class ADB:
                 if re.match(pattern, item[0].replace(" ", "")):
                     x = item[1]
                     y = item[2]
-                    break
+                    position.append([x, y])
 
-            return x, y
+            return position
 
 
 
@@ -558,6 +581,8 @@ class ADB:
         time.sleep(2)
 
 
+        # self.drag_with_adb(270, 400, 270, 600, duration_ms=500)
+        time.sleep(1)
 
         result = research_try()
 
@@ -565,8 +590,10 @@ class ADB:
             time.sleep(1)
             return True
         else :
+            time.sleep(1)
             self.tap(100,85)
             time.sleep(1)
+            self.drag_with_adb(270, 300, 270, 400, duration_ms=300)
 
         result = research_try()
 
@@ -574,8 +601,10 @@ class ADB:
             time.sleep(1)
             return True
         else :
+            time.sleep(1)
             self.tap(270,85)
             time.sleep(1)
+            self.drag_with_adb(270, 400, 270, 400, duration_ms=300)
 
         result = research_try()
 
@@ -583,8 +612,10 @@ class ADB:
             time.sleep(1)
             return True
         else :
+            time.sleep(1)
             self.tap(440,85)
             time.sleep(1)
+            self.drag_with_adb(270, 400, 270, 400, duration_ms=300)
 
         result = research_try()
 
@@ -1266,8 +1297,8 @@ class ADB:
         time.sleep(1)
         self.screen_shot(name="_union_research")
 
-        result = self.get_ocr_raw(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
-        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=False)
+        result = self.get_ocr_raw_advanced(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, binary_threshold=140)
+        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
 
 
         target_avg = None  # 결과를 담을 변수
@@ -1276,16 +1307,22 @@ class ADB:
             curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
             next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
 
-            if "연맹" in curr_text and "기부" in next_text:
+            if "기부" in curr_text and "가능" in next_text:
                 curr_val = float(processed_result[i][2])      # 고급모집의 2번 인덱스
                 next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
                 target_avg = (curr_val + next_val) / 2.0
-                self.tap(350, target_avg) # 연맹 기부 버튼 누르기
+                self.tap(300, target_avg) # 연맹 기부 버튼 누르기
                 time.sleep(1)
                 self.tap(400, 920) # 연맹 버튼 누르기
                 time.sleep(5)
                 self.tap(420, 700) # 연맹 과학 기술 버튼 누르기
                 time.sleep(1)
+                break
+            else :
+                pass
+        else:
+            self.tap(355,415)
+            return False
 
 
         self.screen_shot(name="_union_research_queue")
@@ -1744,8 +1781,9 @@ def init_bluestacks_and_adbs():
     for cmd in commands:
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         processes.append(process)
-        time.sleep(5)  # 명령 실행 간 지연 시간 추가
+        time.sleep(3)  # 명령 실행 간 지연 시간 추가
 
+    time.sleep(10)
 
     # ADB 연결 및 kingshot 실행
     adbs = []
@@ -1876,6 +1914,17 @@ def run_one_adb(itr, adb):
         print(f"adb{itr} 시작")
 
         adb.itr = itr
+
+        # 튕겼는지 체크
+
+        adb.screen_shot(name="_initialize")
+        result = adb.get_ocr_raw(file_name="capture_initialize.png", x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1)
+        processed_result = adb.process_ocr(result=result, x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1, merge=False)
+        result = adb.has_keywords(processed_result, ["Store", "store", "시스템"], min_count=2)
+
+        if result :
+            adb.start_kingshot()
+            time.sleep(5)
 
         # reconnet 창이 떠있는지 확인
         reconnect_check = adb.check_reconnect()
