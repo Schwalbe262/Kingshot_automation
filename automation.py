@@ -1005,6 +1005,48 @@ class ADB:
 
         self.back() # 아무것도 수령할거 없는 경우
 
+
+
+    def get_people(self) :
+
+        self.tap(470,610)
+        time.sleep(1)
+        self.screen_shot(name="_people")
+
+        result = self.get_ocr_raw(file_name="capture_people.png", x_min=210, x_max=330, y_min=820, y_max=860, y_threshold=10, scale=1)
+        processed_result = self.process_ocr(result=result, x_min=210, x_max=330, y_min=820, y_max=860, y_threshold=10, scale=1, merge=True)
+
+        if processed_result :
+            self.tap(270,840)
+            time.sleep(5)
+
+
+    def read_letter(self) :
+
+        self.tap(500,785)
+        time.sleep(1)
+        self.tap(420,930)
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+        self.back()
+
+
+    def get_VIP(self) :
+
+        self.tap(490,60)
+        time.sleep(1)
+        self.tap(470,215)
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+        self.back()
+
+
+
+
+
+
         
 
 
@@ -1432,6 +1474,15 @@ def run_one_adb(itr, adb):
             check_exception_case(adb)
 
 
+            if loop_count.get(itr, 0) == 0 :
+
+                adb.get_people()
+                check_abnormal(adb)
+                adb.read_letter()
+                check_abnormal(adb)
+                adb.get_VIP()
+
+
 
             # 현재 위치 판단 (예외처리)
             adb.screen_shot(name="_inout")
@@ -1519,6 +1570,8 @@ def run_one_adb(itr, adb):
                 time.sleep(10)
 
             check_exception_case(adb)
+
+            check_abnormal(adb)
 
             # adb.get_money()
             # time.sleep(1)
