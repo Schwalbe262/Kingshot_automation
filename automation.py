@@ -341,7 +341,7 @@ class ADB:
             y_threshold = 10
             scale = 3
 
-            result = self.get_ocr_raw(file_name="capture_state_check.png", x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max, y_threshold=y_threshold, scale=scale)
+            result = self.get_ocr_raw_advanced(file_name="capture_state_check.png", x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max, y_threshold=y_threshold, scale=scale, binary_threshold=140)
             processed_result = self.process_ocr(result=result, x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max, y_threshold=y_threshold, scale=scale)
 
             if mod == 2 :
@@ -404,7 +404,7 @@ class ADB:
         self.screen_shot(name="_state_check2")
 
 
-        result = self.get_ocr_raw(file_name="capture_state_check2.png", x_min=55, x_max=285, y_min=250, y_max=580, y_threshold=10, scale=1)
+        result = self.get_ocr_raw_advanced(file_name="capture_state_check2.png", x_min=55, x_max=285, y_min=250, y_max=580, y_threshold=10, scale=1, binary_threshold=140)
         processed_result = self.process_ocr(result=result, x_min=55, x_max=285, y_min=250, y_max=580, y_threshold=10, scale=1, merge=True)
         # print(processed_result)
 
@@ -480,43 +480,183 @@ class ADB:
 
     def research(self) :
 
+
+        def research_try() :
+
+            for attempt in range(5):
+
+                self.screen_shot(name="_research")
+
+                result = self.get_ocr_raw_advanced(file_name="capture_research.png", x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, binary_threshold=140)
+                processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, merge=False)
+
+                x, y = pattern_search(processed_result)
+
+                if x != 0 and y != 0:
+                    self.tap(x, y)
+                    time.sleep(1)
+
+                    self.screen_shot(name="_research_check")
+                    result = self.get_ocr_raw_advanced(file_name="capture_research_check.png", x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, binary_threshold=140)
+                    processed_result = self.process_ocr(result=result, x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, merge=False)
+                    
+
+                    x_check = 0
+                    y_check = 0
+
+                    for item in processed_result:
+                        if "연구" in str(item[0]):
+                            x_check = item[1]
+                            y_check = item[2]
+                            break
+                    
+                    print("========== 연구 버튼 인식 ==========")
+                    print(processed_result)
+                    print(x_check, y_check)
+                    print("================================")
+
+                    if x_check == 0 and y_check == 0:
+                        break
+
+                    self.tap(x_check, y_check)  # 연구 버튼
+                    time.sleep(1)
+                            
+                    self.tap(455, 895)  # 연맹 협조
+                    time.sleep(1)
+                    self.back()
+                    time.sleep(1)
+                    print(f"adb{self.itr} 과학기술 연구 시작 (시도 {attempt+1})")
+                    return True
+                else:
+                    time.sleep(1)
+                    self.drag_with_adb(270, 530, 270, 450, duration_ms=100)
+                    time.sleep(1)
+            return False
+        
+
+        def pattern_search(processed_result) :
+
+            x = 0
+            y = 0
+            pattern = r"^\d+/\d+$"
+            for item in processed_result:
+                if re.match(pattern, item[0].replace(" ", "")):
+                    x = item[1]
+                    y = item[2]
+                    break
+
+            return x, y
+
+
+
+
         self.tap(10,415)
         time.sleep(2)
         self.tap(305,610) # 과학기술 연구
-        time.sleep(5)
+        time.sleep(3)
         self.tap(360,550) # 연구 버튼
         time.sleep(2)
 
-        self.screen_shot(name="_research")
-
-        result = self.get_ocr_raw(file_name="capture_research.png", x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3)
-        processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, merge=False)
 
 
-        results = []
-        x = 0
-        y = 0
-        pattern = r"^\d+/\d+$"
-        for item in processed_result:
-            if re.match(pattern, item[0].replace(" ", "")):
-                x = item[1]
-                y = item[2]
-                break
+        result = research_try()
 
-        time.sleep(1)
-
-        if x != 0 and y != 0 :
-            self.tap(x,y)
+        if result == True :
             time.sleep(1)
-            self.tap(385,735) # 연구 버튼
+            return True
+        else :
+            self.tap(100,85)
             time.sleep(1)
-            self.tap(455,895) # 연맹 협조
+
+        result = research_try()
+
+        if result == True :
             time.sleep(1)
+            return True
+        else :
+            self.tap(270,85)
+            time.sleep(1)
+
+        result = research_try()
+
+        if result == True :
+            time.sleep(1)
+            return True
+        else :
+            self.tap(440,85)
+            time.sleep(1)
+
+        result = research_try()
+
+        if result == True :
+            time.sleep(1)
+            return True
+        else :
             self.back()
             time.sleep(1)
-            print(f"adb{self.itr} 과학기술 연구 시작")
+
+
+
+
+
+        
+
+        
+
+        
   
-     
+
+    def build_city_new(self, building) :
+
+
+
+        def build_city_try(self) : # 업그레이드 버튼 찾아서 누르기기
+
+            self.screen_shot(name="_build_city")
+
+            result = self.get_ocr_raw_advanced(file_name="capture_build_city.png", x_min=40, x_max=540, y_min=250, y_max=800, y_threshold=10, scale=3, binary_threshold=140)
+            processed_result = self.process_ocr(result=result, x_min=40, x_max=540, y_min=250, y_max=800, y_threshold=10, scale=3, merge=False)
+
+            x_upgrade = 0 # 업그레이드 버튼 x좌표
+            y_upgrade = 0 # 업그레이드 버튼 y좌표
+            for item in processed_result:
+                if any(kw in str(item[0]) for kw in ["업그레이드", "업그", "업그레", "레이드", "이드", "건설설"]):
+                    x_upgrade = item[1]
+                    y_upgrade = item[2]-15
+                    break
+            
+            if x_upgrade == 0 and y_upgrade == 0:
+                return False
+            else:
+                self.tap(x_upgrade, y_upgrade)
+                time.sleep(3)
+                self.tap(270,330) # 도움 버튼 누르기
+                time.sleep(1)
+                return True
+
+
+        self.tap(10,415)
+        time.sleep(1)
+        if building == 1 :
+            self.tap(305,285) # 건물 1
+        elif building == 2 :
+            self.tap(305,335) # 건물 2
+        time.sleep(3)
+
+
+        self.tap(260,420) # 한번 눌러주기
+        time.sleep(1)
+        self.tap(270,420) # 한번 눌러주기
+        time.sleep(1)
+
+
+        for _ in range(10):
+            if build_city_try(self) == False :
+                break
+
+
+
+
 
 
   
@@ -1126,10 +1266,8 @@ class ADB:
         time.sleep(1)
         self.screen_shot(name="_union_research")
 
-        result = self.get_ocr_raw(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1)
-        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1, merge=True)
-
-        processed_result
+        result = self.get_ocr_raw(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=False)
 
 
         target_avg = None  # 결과를 담을 변수
@@ -1140,48 +1278,59 @@ class ADB:
 
             if "연맹" in curr_text and "기부" in next_text:
                 curr_val = float(processed_result[i][2])      # 고급모집의 2번 인덱스
-                print(curr_val)
                 next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
                 target_avg = (curr_val + next_val) / 2.0
-                self.tap(305, target_avg) # 연맹 기부 버튼 누르기
+                self.tap(350, target_avg) # 연맹 기부 버튼 누르기
                 time.sleep(1)
                 self.tap(400, 920) # 연맹 버튼 누르기
                 time.sleep(5)
-                self.tap(410, 700) # 연맹 과학 기술 버튼 누르기
+                self.tap(420, 700) # 연맹 과학 기술 버튼 누르기
                 time.sleep(1)
 
 
-                self.screen_shot(name="_union_research_queue")
+        self.screen_shot(name="_union_research_queue")
 
-                result = self.get_ocr_raw(file_name="capture_union_research_queue.png", x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3)
-                processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, merge=False)
+        result = self.get_ocr_raw_advanced(file_name="capture_union_research_queue.png", x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, binary_threshold=140)
+        processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, merge=False)
 
+        pattern = r"^\d+/\d+$"
+        for item in processed_result:
 
-                x = 0
-                y = 0
-                pattern = r"^\d+/\d+$"
-                for item in processed_result:
-                    if re.match(pattern, item[0].replace(" ", "")):
-                        x = item[1]
-                        y = item[2]
-                        break
+            x = 0
+            y = 0
 
-                time.sleep(1)
+            if re.match(pattern, item[0].replace(" ", "")):
+
+                x = item[1]
+                y = item[2]
 
                 if x != 0 and y != 0 :
                     self.tap(x,y)
                     time.sleep(1)
-                    self.tap(385,735) # 기부 버튼
-                    time.sleep(1)
-                    self.back()
-                    time.sleep(1)
-                    self.back()
 
-                print(f"adb{self.itr} 연맹 연구 기여 완료")
-                break
+                    self.screen_shot(name="_union_done")
+                    result = self.get_ocr_raw_advanced(file_name="capture_union_done.png", x_min=295, x_max=475, y_min=690, y_max=820, y_threshold=10, scale=3, binary_threshold=140)
+                    processed_result = self.process_ocr(result=result, x_min=295, x_max=475, y_min=690, y_max=820, y_threshold=10, scale=3, merge=False)
 
-            else :
-                self.tap(355,415)
+                    for item in processed_result:
+                        if "기부" in str(item[0]):
+                            x = item[1]
+                            y = item[2]
+                            self.tap(385,765) # 기부 버튼
+                            time.sleep(1)
+                            self.back()
+                            time.sleep(1)
+                            self.back()
+                            print(f"adb{self.itr} 연맹 연구 기여 완료")
+                            # return True
+                    else :
+                        self.back()
+                        time.sleep(1)
+
+
+
+
+
 
 
 
@@ -1401,6 +1550,67 @@ class ADB:
         result = self.ocr.ocr(cropped_img_path, cls=False)
 
         return result
+
+
+    def get_ocr_raw_advanced(
+        self,
+        file_name="capture.png",
+        x_min=0, x_max=480, y_min=0, y_max=1000,
+        y_threshold=10,
+        scale=3,
+        use_clahe=True,
+        clahe_clip_limit=2.0,
+        clahe_tile_grid_size=(8, 8),
+        use_gamma=True,
+        gamma=1.2,
+        use_binary=True,
+        binary_threshold=0,        # 값 
+        binary_inv=True           # 글자를 흰색으로 만들고 싶으면 True
+    ):
+        img_path = f"{self.base}\\{self._f(file_name)}"
+        image = cv2.imread(img_path)
+        if image is None:
+            raise FileNotFoundError(f"Image not found at path: {img_path}")
+        cropped_image = image[y_min:y_max, x_min:x_max]
+        if scale and scale != 1:
+            h, w = cropped_image.shape[:2]
+            cropped_image = cv2.resize(cropped_image, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+
+        # 1) 그레이 변환
+        gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
+
+        # 2) CLAHE (선택)
+        if use_clahe:
+            clahe = cv2.createCLAHE(clipLimit=clahe_clip_limit, tileGridSize=clahe_tile_grid_size)
+            gray = clahe.apply(gray)
+        else:
+            # 기존 equalizeHist 유지하고 싶으면 여기에서 사용
+            gray = cv2.equalizeHist(gray)
+
+        # 3) 감마 보정 (선택)
+        if use_gamma and gamma != 1.0:
+            inv_gamma = 1.0 / gamma
+            table = (np.array([(i / 255.0) ** inv_gamma * 255 for i in np.arange(0, 256)])
+                    .astype("uint8"))
+            gray = cv2.LUT(gray, table)
+
+        # 4) 이진화 (선택) – 글자를 확실히 흰색/배경 검정으로
+        if use_binary:
+            if binary_threshold == 0:
+                # OTSU 자동 임계값
+                thresh_type = cv2.THRESH_BINARY_INV if binary_inv else cv2.THRESH_BINARY
+                _, gray = cv2.threshold(gray, 0, 255, thresh_type + cv2.THRESH_OTSU)
+            else:
+                thresh_type = cv2.THRESH_BINARY_INV if binary_inv else cv2.THRESH_BINARY
+                _, gray = cv2.threshold(gray, binary_threshold, 255, thresh_type)
+
+        cropped_image = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+        cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
+        cv2.imwrite(cropped_img_path, cropped_image)
+        result = self.ocr.ocr(cropped_img_path, cls=False)
+
+        return result
     
 
     def process_ocr(self, result, x_min=0, x_max=480, y_min=0, y_max=1000, y_threshold=10, scale=1, merge=True):
@@ -1534,7 +1744,7 @@ def init_bluestacks_and_adbs():
     for cmd in commands:
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         processes.append(process)
-        time.sleep(10)  # 명령 실행 간 지연 시간 추가
+        time.sleep(5)  # 명령 실행 간 지연 시간 추가
 
 
     # ADB 연결 및 kingshot 실행
@@ -1722,8 +1932,11 @@ def run_one_adb(itr, adb):
                 time.sleep(1)
                 stamina = adb.get_stamina()
 
-
+            
             check_exception_case(adb)
+            time.sleep(1)
+            check_abnormal(adb)
+            time.sleep(1)
 
             if unit1 == 2 :
                 adb.get_unit(type="보병")
@@ -1739,9 +1952,12 @@ def run_one_adb(itr, adb):
                 # print("궁병 훈련 완료")
 
 
+            check_exception_case(adb)
+            time.sleep(1)
+            check_abnormal(adb)
             time.sleep(1)
 
-            check_exception_case(adb)
+
             if adb.check_help() == True :
                 adb.tap(400,820) # 연맹 도움
                 time.sleep(1)
@@ -1756,6 +1972,9 @@ def run_one_adb(itr, adb):
                 # rint("건물 2 건설 시작")
 
 
+            check_exception_case(adb)
+            time.sleep(1)
+            check_abnormal(adb)
             time.sleep(1)
 
 
