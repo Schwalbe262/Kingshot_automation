@@ -1369,7 +1369,7 @@ class ADB:
                             time.sleep(1)
                             self.back()
                             print(f"adb{self.itr} 연맹 연구 기여 완료")
-                            # return True
+                            return True
                     else :
                         self.back()
                         time.sleep(1)
