@@ -514,7 +514,7 @@ class ADB:
             time.sleep(1)
             self.back()
             time.sleep(1)
-            print(f"adb{self.itr} 과학기술 연구 시작작")
+            print(f"adb{self.itr} 과학기술 연구 시작")
   
      
 
@@ -1118,6 +1118,74 @@ class ADB:
         self.tap(355,415) # 영웅 창 닫기
 
 
+    def union_research(self) :
+
+        self.tap(10,415)
+        time.sleep(1)
+        self.drag_with_adb(170, 625, 170, 275, duration_ms=500)
+        time.sleep(1)
+        self.screen_shot(name="_union_research")
+
+        result = self.get_ocr_raw(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1)
+        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1, merge=True)
+
+        processed_result
+
+
+        target_avg = None  # 결과를 담을 변수
+
+        for i in range(len(processed_result) - 1):
+            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
+            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
+
+            if "연맹" in curr_text and "기부" in next_text:
+                curr_val = float(processed_result[i][2])      # 고급모집의 2번 인덱스
+                print(curr_val)
+                next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
+                target_avg = (curr_val + next_val) / 2.0
+                self.tap(305, target_avg) # 연맹 기부 버튼 누르기
+                time.sleep(1)
+                self.tap(400, 920) # 연맹 버튼 누르기
+                time.sleep(5)
+                self.tap(410, 700) # 연맹 과학 기술 버튼 누르기
+                time.sleep(1)
+
+
+                self.screen_shot(name="_union_research_queue")
+
+                result = self.get_ocr_raw(file_name="capture_union_research_queue.png", x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3)
+                processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, merge=False)
+
+
+                x = 0
+                y = 0
+                pattern = r"^\d+/\d+$"
+                for item in processed_result:
+                    if re.match(pattern, item[0].replace(" ", "")):
+                        x = item[1]
+                        y = item[2]
+                        break
+
+                time.sleep(1)
+
+                if x != 0 and y != 0 :
+                    self.tap(x,y)
+                    time.sleep(1)
+                    self.tap(385,735) # 기부 버튼
+                    time.sleep(1)
+                    self.back()
+                    time.sleep(1)
+                    self.back()
+
+                print(f"adb{self.itr} 연맹 연구 기여 완료")
+                break
+
+            else :
+                self.tap(355,415)
+
+
+
+
 
     def get_quest(self) :
 
@@ -1505,7 +1573,7 @@ def init_bluestacks_and_adbs():
         processed_result = adb.process_ocr(result=result, x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1, merge=False)
         result = adb.has_keywords(processed_result, ["Store", "store", "시스템"], min_count=2)
 
-        if processed_result == None :
+        if processed_result == [] :
             result = True
 
         if result:
@@ -1704,20 +1772,32 @@ def run_one_adb(itr, adb):
 
                 if unit1 == 1 and adb.infantry == False and (build1 != 1 and build2 != 1) :
                     adb.unit_training(unit="보병")
+                    time.sleep(1)
                     # print("보병 훈련 시작")
                 if unit2 == 1 and adb.calvary == False and (build1 != 1 and build2 != 1) :
                     adb.unit_training(unit="기병")
+                    time.sleep(1)
                     # print("기병 훈련 시작")
                 if unit3 == 1 and adb.archer == False and (build1 != 1 and build2 != 1) :
                     adb.unit_training(unit="궁병")
+                    time.sleep(1)
                     # print("궁병 훈련 시작")
 
 
+            check_abnormal(adb)
             time.sleep(1)
 
             if research == 1 :
                 adb.research()
                 time.sleep(1)
+
+            
+            check_abnormal(adb)
+            time.sleep(1)
+
+
+            adb.union_research()
+            time.sleep(1)
 
 
 
