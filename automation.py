@@ -412,22 +412,22 @@ class ADB:
             curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
             next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
 
-            if any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격격"]):
+            if any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격"]):
                 result_s2.append(next_text)
                 index = index + 1
-            elif "방앗간" in curr_text:
+            elif any(keyword in curr_text for keyword in ["방앗", "앗간"]):
                 result_s2.append("빵")
                 index = index + 1
-            elif "벌목장" in curr_text:
+            elif any(keyword in curr_text for keyword in ["벌목", "목장"]):
                 result_s2.append("목재")
                 index = index + 1
-            elif "채석장" in curr_text:
+            elif any(keyword in curr_text for keyword in ["채석", "석장"]):
                 result_s2.append("석재")
                 index = index + 1
-            elif "철광장" in curr_text:
+            elif any(keyword in curr_text for keyword in ["철광", "광장"]):
                 result_s2.append("철광")
                 index = index + 1
-            if any(keyword in curr_text for keyword in ["비어", "채집"]):
+            elif any(keyword in curr_text for keyword in ["비어", "채집"]):
                 result_s2.append("채집")
                 index = index + 1
 
@@ -477,7 +477,11 @@ class ADB:
         result = self.get_ocr_raw(file_name="capture_check_stamina.png", x_min=80, x_max=150, y_min=820, y_max=850, y_threshold=10, scale=1)
         processed_result = self.process_ocr(result=result, x_min=80, x_max=150, y_min=820, y_max=850, y_threshold=10, scale=1, merge=True)
 
-        stamina = int(str(processed_result[0][0]).split('/')[0].strip())
+        try :
+            stamina = int(str(processed_result[0][0]).split('/')[0].strip())
+        except :
+            stamina = 100
+
         print(f"adb{self.itr} stamina: {stamina}")
 
         if stamina > 0 :
@@ -1250,10 +1254,32 @@ class ADB:
 
         self.tap(270,470) # 공격
         time.sleep(1*self.time)
-        self.tap(220,890) # 균등배치
+
+        self.screen_shot(name="_allocation")
+        result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
+
+
+        flag = 0
+        for item in processed_result:
+            if "균등" in item[0] or "배치" in item[0] :
+                self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
+                time.sleep(1*self.time)
+                self.tap(410,910) # 출정
+                time.sleep(2*self.time)
+                return True
+            if "비례" in item[0] :
+                flag = 1
+
+        if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
+            self.tap(220,890) # 균등배치
+        elif flag == 1 : # 비례라는 단어가 탐지된 경우
+            self.tap(150,890) # 균등배치
         time.sleep(1*self.time)
         self.tap(410,910) # 출정
         time.sleep(2*self.time)
+
+        
 
 
 
@@ -1323,11 +1349,36 @@ class ADB:
             time.sleep(1)
             self.tap(460,190) # 영웅 3 취소
             time.sleep(1)
-            self.tap(220,890) # 균등배치
-            time.sleep(1)
+
+
+            self.screen_shot(name="_allocation")
+            result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
+            processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
+    
+            flag = 0
+            for item in processed_result:
+                if "균등" in item[0] or "배치" in item[0] :
+                    self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
+                    time.sleep(1*self.time)
+                    self.tap(410,910) # 출정
+                    time.sleep(2*self.time)
+                    return True
+                if "비례" in item[0] :
+                    flag = 1
+
+            if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
+                self.tap(220,890) # 균등배치
+            elif flag == 1 : # 비례라는 단어가 탐지된 경우
+                self.tap(150,890) # 균등배치
+            time.sleep(1*self.time)
             self.tap(410,910) # 출정
-            time.sleep(2)
-            return True
+            time.sleep(2*self.time)
+
+
+        
+
+
+        
 
 
     def get_hero(self) :
@@ -1933,7 +1984,7 @@ def init_bluestacks_and_adbs():
 
     # BlueStacks 인스턴스 실행
     commands = [
-        # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_1"],  # 5555
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_1"],  # 5555
         [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_12"],
         [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_13"],
         [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_14"],
@@ -1955,7 +2006,7 @@ def init_bluestacks_and_adbs():
 
     # ADB 연결 및 kingshot 실행
     adbs = []
-    # adbs.append(ADB(port=5555))
+    adbs.append(ADB(port=5555))
     adbs.append(ADB(port=5675))
     adbs.append(ADB(port=5685))
     adbs.append(ADB(port=5695))
@@ -2050,8 +2101,12 @@ def check_exception_case(adb) :
 
     check_resource = adb.msg_check(msg="오프라인", x_min=190, x_max=350, y_min=170, y_max=205, y_threshold=10, scale=3)
     if check_resource == True :
+        time.sleep(300)
         adb.back()
         time.sleep(3)
+        check_abnormal(adb)
+        
+
 
     check_resource = adb.msg_check(msg="패키지", x_min=60, x_max=430, y_min=60, y_max=105, y_threshold=10, scale=3)
     if check_resource == True :
@@ -2082,6 +2137,7 @@ def run_one_adb(itr, adb):
         print(f"adb{itr} 시작")
 
         adb.itr = itr
+        switching = 0
 
         # 튕겼는지 체크
 
@@ -2290,7 +2346,7 @@ def run_one_adb(itr, adb):
                         adb.hunting()
 
         
-                    else : # 자원 채취취
+                    else : # 자원 채취
                         bread_value, wood_value, stone_value, iron_value = adb.resource_remain()
                         print(f"adb{itr} : {bread_value/1e+6}, {wood_value/1e+6}, {stone_value/1e+6}, {iron_value/1e+6}")
                         stone_value = stone_value * 5
@@ -2299,17 +2355,35 @@ def run_one_adb(itr, adb):
                         time.sleep(3)
 
 
+                        # 이미 수집중인 자원 배제제
                         resource_list = [bread_value, wood_value, stone_value, iron_value]
-                        
-                        # 이미 수집 중인 자원은 배제
-                        if "빵" in state[1] :
-                            resource_list.remove(bread_value)
-                        elif "목재" in state[1] :
-                            resource_list.remove(wood_value)
-                        elif "석재" in state[1] :
-                            resource_list.remove(stone_value)
-                        elif "철광" in state[1] :
-                            resource_list.remove(iron_value)
+                        for resource_ex in state[1]:
+                            if not isinstance(resource_ex, str):
+                                continue
+                            if "빵" in resource_ex :
+                                try:
+                                    resource_list.remove(bread_value)
+                                except ValueError:
+                                    # 이미 제거된 경우 에러 무시
+                                    pass
+                            elif "목재" in resource_ex :
+                                try:
+                                    resource_list.remove(wood_value)
+                                except ValueError:
+                                    # 이미 제거된 경우 에러 무시
+                                    pass
+                            elif "석재" in resource_ex :
+                                try:
+                                    resource_list.remove(stone_value)
+                                except ValueError:
+                                    # 이미 제거된 경우 에러 무시
+                                    pass
+                            elif "철광" in resource_ex :
+                                try:
+                                    resource_list.remove(iron_value)
+                                except ValueError:
+                                    # 이미 제거된 경우 에러 무시
+                                    pass
 
                         if resource_list == [] :
                             resource_list = [bread_value, wood_value, stone_value, iron_value]
@@ -2430,7 +2504,7 @@ def run_one_adb(itr, adb):
         #     # timer = time.time()
 
 
-        if loop_count.get(itr, 0) % 30 == 0 :
+        if loop_count.get(itr, 0) % 10 == 0 :
 
             print(f"adb{itr} loop 30 진입")
 
@@ -2451,7 +2525,44 @@ def run_one_adb(itr, adb):
             adb.get_supply()
             time.sleep(1)
 
+
+        if adb.port == 5555 and  loop_count.get(itr, 0) % 20 == 0 :
+
+            check_abnormal(adb)
+            adb.tap(35,35) # 초상화 클릭
+            time.sleep(1)
+
+            adb.screen_shot(name="_ID")
+            result = adb.get_ocr_raw(file_name="capture_ID.png", x_min=210, x_max=440, y_min=660, y_max=700, y_threshold=10, scale=3)
+            processed_result = adb.process_ocr(result=result, x_min=210, x_max=440, y_min=660, y_max=700, y_threshold=10, scale=3, merge=True)
+
+            if any(s in processed_result[0][0] for s in ("fa", "ar", "rm")):
+                farm = True
+            else :
+                farm = False
+
+            adb.tap(470,920) # 설정 클릭
+            time.sleep(1)
+            adb.tap(160,250) # 캐릭터 관리
+            time.sleep(1)
+
+            if farm == True :
+                adb.tap(270,400)
+            elif farm == False :
+                adb.tap(270,520)
+
+            time.sleep(1)
+            adb.tap(385,600) # 확인
+            time.sleep(10)
+
+            if switching == 0 :
+                adb.itr = 0
+            switching += 1
             
+
+
+
+        
 
 
 
