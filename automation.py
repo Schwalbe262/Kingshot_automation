@@ -366,7 +366,7 @@ class ADB:
                             flag = False
                     if flag == True :
                         result_s1.append(next_text)
-                        print(f"{curr_text} : {next_text}")
+                        # print(f"{curr_text} : {next_text}")
                         index = index + 1
                         break
 
@@ -378,11 +378,13 @@ class ADB:
         if not broke_early :
             self.tap(355,415)
             time.sleep(0.5 * self.time)
+            print(f"adb{self.itr} state1 인식 에러 발생")
+            print(processed_result)
             return False
             
         for itr, res in enumerate(result_s1):
 
-            if "한가함" in res : # 한가함
+            if "한가" in res or "가함" in res : # 한가함
                 result_s1[itr] = 1
             elif (res.count(":") == 2 and all(part.isalnum() for part in res.split(":"))) : # 진행 중
                 result_s1[itr] = 0
@@ -410,7 +412,7 @@ class ADB:
             curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
             next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
 
-            if str(index+1) in curr_text and ("행군" in curr_text or "대열" in curr_text):
+            if any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격격"]):
                 result_s2.append(next_text)
                 index = index + 1
             elif "방앗간" in curr_text:
@@ -425,7 +427,7 @@ class ADB:
             elif "철광장" in curr_text:
                 result_s2.append("철광")
                 index = index + 1
-            if str(index+1) in curr_text and ("비어" in curr_text or "채집" in curr_text):
+            if any(keyword in curr_text for keyword in ["비어", "채집"]):
                 result_s2.append("채집")
                 index = index + 1
 
@@ -439,6 +441,8 @@ class ADB:
             time.sleep(0.5 * self.time)
             self.tap(355,415) # 창 닫기
             time.sleep(0.5 * self.time)
+            print(f"adb{self.itr} state2 인식 에러 발생")
+            print(processed_result)
             return False
 
         for itr, res in enumerate(result_s2):
@@ -538,6 +542,8 @@ class ADB:
                 # print("================================")
 
                 if position == [] :
+                    self.drag_with_adb(270, 530, 270, 450, duration_ms=100)
+                    time.sleep(1)
                     continue
 
                 for x, y in position:
@@ -700,19 +706,19 @@ class ADB:
                 keywords = ["업그레이드", "업그레", "업그", "레이드"]
                 if any(keyword in text for keyword in keywords):
                     self.tap(400,910)
-                    time.sleep(1)
+                    time.sleep(1*self.time)
                     abnormal = self.check_abnormal()
                     if abnormal == False :
                         self.tap(270,330) # 도움 버튼
                     return True
 
         self.tap(10,415)
-        time.sleep(1)
+        time.sleep(1*self.time)
         if building == 1 :
             self.tap(305,285) # 건물 1
         elif building == 2 :
             self.tap(305,335) # 건물 2
-        time.sleep(2)
+        time.sleep(2*self.time)
 
 
         # ====================
@@ -729,7 +735,7 @@ class ADB:
             text = str(result[0]).replace(" ", "")
             if any(keyword in text for keyword in keywords): # 
                 self.tap(365,550) # 훈련 버튼
-                time.sleep(0.5)
+                time.sleep(0.5*self.time)
                 
                 # 훈련 상태인지 체크
                 self.screen_shot(name="_check_training")
@@ -738,19 +744,19 @@ class ADB:
                 for result in processed_result :
                     if "가속" in result[0] :
                         self.tap(465,685) # 취소 버튼
-                        time.sleep(0.5)
+                        time.sleep(0.5*self.time)
                         self.tap(380,590)
-                        time.sleep(0.5)
+                        time.sleep(0.5*self.time)
                         break
                 self.back()
-                time.sleep(0.5)
+                time.sleep(0.5*self.time)
                 self.tap(275,400)
-                time.sleep(0.5)
+                time.sleep(0.5*self.time)
 
         # 대사관에 도움 요청 떠있는 경우 건물 눌러도 업그레이드 안뜨는 경우 있음음
         if processed_result == [] : 
             self.tap(275,460)
-            time.sleep(0.5)
+            time.sleep(0.5*self.time)
 
 
 
@@ -774,7 +780,7 @@ class ADB:
         # 업그레이드 버튼이 인식 된 경우
         if x != 0 and y != 0 :
             self.tap(x, y)
-            time.sleep(1)
+            time.sleep(1*self.time)
             self.tap(390,750)
             time.sleep(2)
             abnormal = self.check_abnormal()
@@ -790,16 +796,16 @@ class ADB:
         # 2번 케이스 특수 건물
         # ====================
         self.tap(450,465) # 일단 업그레이드 버튼 눌러보기
-        time.sleep(2)
+        time.sleep(2*self.time)
 
         if upgrade_button(self) :
             return True
 
         for _ in range(10) :
             self.tap(450,500) # 업그레이드 해보기
-            time.sleep(0.5)
-            self.tap(450,465) # 일단 업그레이드 버튼 눌러보기
-            time.sleep(2)
+            time.sleep(0.5*self.time)
+            self.tap(450,400) # 일단 업그레이드 버튼 눌러보기
+            time.sleep(2*self.time)
             if upgrade_button(self) :
                 return True
         # ====================
@@ -831,7 +837,7 @@ class ADB:
                 result=result, x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
                 y_threshold=y_threshold, scale=scale
             )
-            print(processed_result)
+            # print(processed_result)
             return any(msg in str(item[0]) for item in processed_result)
 
         def is_upgrade_word(text):
@@ -1232,22 +1238,22 @@ class ADB:
 
         self.tap(35,660) # 서치버튼
 
-        time.sleep(1)
+        time.sleep(1*self.time)
 
         self.tap(70,675) # 야수
-        time.sleep(1)
+        time.sleep(1*self.time)
 
         self.tap(365,790) # 한단계 높이기
-        time.sleep(1)
+        time.sleep(1*self.time)
         self.tap(270,910) # 검색
-        time.sleep(10)
+        time.sleep(5*self.time)
 
         self.tap(270,470) # 공격
-        time.sleep(1)
+        time.sleep(1*self.time)
         self.tap(220,890) # 균등배치
-        time.sleep(1)
+        time.sleep(1*self.time)
         self.tap(410,910) # 출정
-        time.sleep(2)
+        time.sleep(2*self.time)
 
 
 
@@ -1506,25 +1512,36 @@ class ADB:
 
     def get_quest(self) :
 
-        self.tap(30,790) # 퀘스트 버튼
-        time.sleep(1)
-        self.screen_shot(name="_quest")
+        for _ in range(20) :
 
-        result = self.get_ocr_raw(file_name="capture_quest.png", x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=3)
-        processed_result = self.process_ocr(result=result, x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=1, merge=True)
-        print(processed_result)
+            flag = False
 
-        for item in processed_result:
-            if item[0] == "수령":
-                x = item[1]
-                y = item[2]
-                self.tap(x,y)
-                time.sleep(3)
-                self.back()
-                time.sleep(1)
-                break 
+            self.tap(30,790) # 퀘스트 버튼
+            time.sleep(1)
+            self.screen_shot(name="_quest")
 
-        self.back() # 아무것도 수령할거 없는 경우
+            result = self.get_ocr_raw(file_name="capture_quest.png", x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=3)
+            processed_result = self.process_ocr(result=result, x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=3, merge=True)
+            print(processed_result)
+
+            for item in processed_result:
+                if item[0] == "수령":
+                    x = item[1]
+                    y = item[2]
+                    self.tap(x,y)
+                    time.sleep(1)
+                    flag = True
+                    break 
+
+            self.back() # 아무것도 수령할거 없는 경우
+            time.sleep(1)
+
+            self.check_abnormal()
+            time.sleep(1)
+
+            if flag == False:
+                break
+
 
 
 
@@ -2141,7 +2158,7 @@ def run_one_adb(itr, adb):
             queue_check = False
             if state is not False :
                 [build1, build2, unit1, unit2, unit3, research] = state[0]
-                queue_check = any(str(x) == "1" for x in state[1])
+                queue_check = any(str(x) == "0" for x in state[1])
                 print(f"adb{itr} : {state[0]}")
                 print(f"adb{itr} : {state[1]}")
                 print(f"adb{itr} : {queue_check}")
@@ -2194,7 +2211,7 @@ def run_one_adb(itr, adb):
             if build2 == 1 :
                 adb.build_city_new(building=2)
                 time.sleep(1)
-                # rint("건물 2 건설 시작")
+                print("건물 2 건설 시작")
 
 
             # check_exception_case(adb)
