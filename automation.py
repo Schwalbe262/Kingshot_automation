@@ -30,7 +30,7 @@ class ADB:
         self.port = port
         self.device_id = f"{self.device_ip}:{self.port}"
 
-        self.ocr = PaddleOCR(lang="korean", use_gpu=True, show_log=False)
+        self.ocr = PaddleOCR(lang="korean", use_gpu=False, show_log=False)
 
         self.state = 0 # 0 : 대기방, 1 : 게임시작, 2 : 그 외
         self.state_cul = 0 # 같은 state 몇번 지속인지 기록
@@ -41,6 +41,8 @@ class ADB:
         self.archer = False
 
         self.itr = 0
+
+        self.time = 1
 
     def _f(self, name):
         """동시 실행 시 디바이스별 고유 파일명 (포트 접미사)."""
@@ -328,106 +330,143 @@ class ADB:
     def solve_abnormal(self) :
 
         return 0
-    
-
-        
 
 
 
-    def state_check(self) :
 
-        def check_each_queue(self, x_min, x_max, y_min, y_max, mod=1) :
 
-            y_threshold = 10
-            scale = 3
-
-            result = self.get_ocr_raw_advanced(file_name="capture_state_check.png", x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max, y_threshold=y_threshold, scale=scale, binary_threshold=140)
-            processed_result = self.process_ocr(result=result, x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max, y_threshold=y_threshold, scale=scale)
-
-            if mod == 2 :
-                if any(any(unit in item[0] for unit in ["보병", "기병", "궁병"]) for item in processed_result):
-                    return False # state 바뀐경우
-                else : 
-                    return True # 정상 케이스
-            elif any("한가함" in item[0] for item in processed_result) :
-                return 1 
-            elif any("완료" in item[0] for item in processed_result) :
-                return 2
-            else :
-                return 0
-
-        # state_inverted = check_each_queue(self, 60, 270, 255, 555, mod=2)
-        
-        # if state_inverted == True :
-        #     self.tap(10,415)
-        #     time.sleep(1)
-        # self.screen_shot(name="_state_check")
-
-        # state = self.get_state()
-
+    def state_check(self):
 
         self.tap(10,415)
-        time.sleep(1)
+        time.sleep(0.5 * self.time)
+        self.tap(90,200) # 도시 클릭
+        time.sleep(0.5 * self.time)
 
-        self.screen_shot(name="_state_check")
-        
+        self.screen_shot(name="_state_check1")
 
-        # 대열1
-        build1 = check_each_queue(self, 60, 270, 255, 305)
-        # 대열2
-        build2 = check_each_queue(self, 60, 270, 310, 360)
-        # 보병
-        unit1 = check_each_queue(self, 60, 270, 395, 445)
-        # 기병
-        unit2 = check_each_queue(self, 60, 270, 450, 500)
-        # 궁병
-        unit3 = check_each_queue(self, 60, 270, 505, 555)
+        result = self.get_ocr_raw_advanced(file_name="capture_state_check1.png", x_min=60, x_max=300, y_min=255, y_max=640, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+        processed_result = self.process_ocr(result=result, x_min=60, x_max=300, y_min=255, y_max=640, y_threshold=10, scale=3, merge=True)
 
-        # 과학기술
-        research = check_each_queue(self, 60, 270, 610, 640)
+        list = [["대열1", "업그", "레이드"], ["대열2", "업그", "레이드"], ["보병"], ["기병"], ["궁병"], ["과학", "기술", "연구"]]
+        result_s1 = []
+        index = 0
 
 
-        self.tap(355,415)
-        time.sleep(1)
+        broke_early = False
+        for i in range(len(processed_result) - 1):
+            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
+            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
+
+            flag = True # 과학기술연구 / 과학기술연구 중첩으로 있는거 검출용 (False되면 검출 된 경우)
+
+            for comp in list[index]:
+                if comp in curr_text:
+                    for comp2 in list[index]:
+                        if comp2 in next_text:
+                            flag = False
+                    if flag == True :
+                        result_s1.append(next_text)
+                        print(f"{curr_text} : {next_text}")
+                        index = index + 1
+                        break
+
+            if index == 6:
+                broke_early = True
+                break
+
+        # for문을 다 못돌았을 때 조기 종료 (인식 에러 있는 경우)
+        if not broke_early :
+            self.tap(355,415)
+            time.sleep(0.5 * self.time)
+            return False
+            
+        for itr, res in enumerate(result_s1):
+
+            if "한가함" in res : # 한가함
+                result_s1[itr] = 1
+            elif (res.count(":") == 2 and all(part.isalnum() for part in res.split(":"))) : # 진행 중
+                result_s1[itr] = 0
+            elif "완료" in res : # 완료 (병사 훈련)
+                result_s1[itr] = 2
+            else : # 인식 안되는 경우 -> 진행 중 처리
+                result_s1[itr] = 0
 
 
-        return build1, build2, unit1, unit2, unit3, research
+        # ==============for state2 ==============
 
-
-
-    def state_check2(self) :
-
-        self.tap(10,415)
-        time.sleep(1)
         self.tap(250,200) # 야외 클릭
-        time.sleep(1)
+        time.sleep(0.5 * self.time)
+
         self.screen_shot(name="_state_check2")
 
+        result = self.get_ocr_raw_advanced(file_name="capture_state_check2.png", x_min=60, x_max=300, y_min=255, y_max=640, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+        processed_result = self.process_ocr(result=result, x_min=60, x_max=300, y_min=255, y_max=640, y_threshold=10, scale=3, merge=True)
 
-        result = self.get_ocr_raw_advanced(file_name="capture_state_check2.png", x_min=55, x_max=285, y_min=250, y_max=580, y_threshold=10, scale=1, binary_threshold=140)
-        processed_result = self.process_ocr(result=result, x_min=55, x_max=285, y_min=250, y_max=580, y_threshold=10, scale=1, merge=True)
-        # print(processed_result)
+        result_s2 = []
+        index = 0
 
-        check_queue = any("한가" in str(item[0]) for item in processed_result)
+        broke_early = False
+        for i in range(len(processed_result) - 1):
+            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
+            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
 
-        time.sleep(1)
-        self.tap(90,200) # 도시 클릭
+            if str(index+1) in curr_text and ("행군" in curr_text or "대열" in curr_text):
+                result_s2.append(next_text)
+                index = index + 1
+            elif "방앗간" in curr_text:
+                result_s2.append("빵")
+                index = index + 1
+            elif "벌목장" in curr_text:
+                result_s2.append("목재")
+                index = index + 1
+            elif "채석장" in curr_text:
+                result_s2.append("석재")
+                index = index + 1
+            elif "철광장" in curr_text:
+                result_s2.append("철광")
+                index = index + 1
+            if str(index+1) in curr_text and ("비어" in curr_text or "채집" in curr_text):
+                result_s2.append("채집")
+                index = index + 1
 
-        if check_queue == True :
-            print("================================================")
-            print(f"adb{self.itr} 비어있는 큐 존재")
-            print(processed_result)
-            print("================================================")
-            return True
-        else : 
+            if index == 6:
+                broke_early = True
+                break
+
+        # for문을 다 못돌았을 때 조기 종료 (인식 에러 있는 경우)
+        if not broke_early :
+            self.tap(90,200) # 도시 클릭
+            time.sleep(0.5 * self.time)
+            self.tap(355,415) # 창 닫기
+            time.sleep(0.5 * self.time)
             return False
 
+        for itr, res in enumerate(result_s2):
+
+            if "한가함" in res : # 한가함
+                result_s2[itr] = 0
+            elif any(material in res for material in ["빵", "목재", "석재", "철광"]) :
+                result_s2[itr] = res
+            else :
+                result_s2[itr] = 2
+
+        self.tap(90,200) # 도시 클릭
+        time.sleep(0.5 * self.time)
+        self.tap(355,415) # 창 닫기
+        time.sleep(0.5 * self.time)
+
+        result = [result_s1, result_s2]
+        return result
+
+
+        
+                
 
     
     def get_stamina(self) :
 
-        self.tap(35,35)
-        time.sleep(3)
+        self.tap(35,35) # 초상화 클릭
+        time.sleep(1.0 * self.time)
 
         self.screen_shot(name="_check_stamina")
 
@@ -442,8 +481,8 @@ class ADB:
         else :
             stamina = 0
 
-        time.sleep(1)
         self.back()
+        time.sleep(0.5 * self.time)
 
         return stamina
 
@@ -481,9 +520,9 @@ class ADB:
     def research(self) :
 
 
-        def research_try() :
+        def research_try(itr=3) :
 
-            for attempt in range(1):
+            for attempt in range(itr):
 
                 self.screen_shot(name="_research")
 
@@ -492,11 +531,11 @@ class ADB:
 
                 position = pattern_search(processed_result)
 
-                print("========== 연구 큐 인식   ==========")
-                print(processed_result)
-                print("================================")
-                print(position)
-                print("================================")
+                # print("========== 연구 큐 인식   ==========")
+                # print(processed_result)
+                # print("================================")
+                # print(position)
+                # print("================================")
 
                 if position == [] :
                     continue
@@ -539,10 +578,10 @@ class ADB:
                                 self.back()
                             
                         elif button_flag == True:
-                            print("========== 연구 버튼 인식 ==========")
-                            print(processed_result)
-                            print(x_check, y_check)
-                            print("================================")
+                            # print("========== 연구 버튼 인식 ==========")
+                            # print(processed_result)
+                            # print(x_check, y_check)
+                            # print("================================")
 
                             self.tap(x_check, y_check)  # 연구 버튼
                             time.sleep(1)
@@ -553,11 +592,11 @@ class ADB:
                             time.sleep(1)
                             print(f"adb{self.itr} 과학기술 연구 시작 (시도 {attempt+1})")
                             return True
-                # else:
-                    # pass
-                    # time.sleep(1)
-                    # self.drag_with_adb(270, 530, 270, 450, duration_ms=100)
-                    # time.sleep(1)
+
+                time.sleep(1)
+                self.drag_with_adb(270, 530, 270, 450, duration_ms=100)
+                time.sleep(1)
+
             return False
         
 
@@ -599,7 +638,7 @@ class ADB:
             time.sleep(1)
             self.tap(100,85)
             time.sleep(1)
-            # self.drag_with_adb(270, 300, 270, 400, duration_ms=300)
+            self.drag_with_adb(270, 300, 270, 400, duration_ms=300)
 
         result = research_try()
 
@@ -610,7 +649,7 @@ class ADB:
             time.sleep(1)
             self.tap(270,85)
             time.sleep(1)
-            # self.drag_with_adb(270, 400, 270, 400, duration_ms=300)
+            self.drag_with_adb(270, 300, 270, 400, duration_ms=300)
 
         result = research_try()
 
@@ -621,9 +660,13 @@ class ADB:
             time.sleep(1)
             self.tap(440,85)
             time.sleep(1)
-            # self.drag_with_adb(270, 400, 270, 400, duration_ms=300)
+            self.drag_with_adb(270, 300, 270, 400, duration_ms=1000)
+            time.sleep(1)
+            self.drag_with_adb(270, 300, 270, 400, duration_ms=1000)
+            time.sleep(1)
+            self.drag_with_adb(270, 300, 270, 400, duration_ms=1000)
 
-        result = research_try()
+        result = research_try(itr=8)
 
         if result == True :
             time.sleep(1)
@@ -645,32 +688,23 @@ class ADB:
 
     def build_city_new(self, building) :
 
+        def upgrade_button(self) :
 
+            self.screen_shot(name="_upgrade_button")
+            result = self.get_ocr_raw_advanced(file_name="capture_upgrade_button.png", x_min=320, x_max=480, y_min=875, y_max=935, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+            processed_result = self.process_ocr(result=result, x_min=320, x_max=480, y_min=875, y_max=935, y_threshold=10, scale=3, merge=False)
 
-        def build_city_try(self) : # 업그레이드 버튼 찾아서 누르기기
+            for result in processed_result :
+                text = str(result[0]).replace(" ", "")
 
-            self.screen_shot(name="_build_city")
-
-            result = self.get_ocr_raw_advanced(file_name="capture_build_city.png", x_min=40, x_max=540, y_min=250, y_max=800, y_threshold=10, scale=3, binary_threshold=140)
-            processed_result = self.process_ocr(result=result, x_min=40, x_max=540, y_min=250, y_max=800, y_threshold=10, scale=3, merge=False)
-
-            x_upgrade = 0 # 업그레이드 버튼 x좌표
-            y_upgrade = 0 # 업그레이드 버튼 y좌표
-            for item in processed_result:
-                if any(kw in str(item[0]) for kw in ["업그레이드", "업그", "업그레", "레이드", "이드", "건설설"]):
-                    x_upgrade = item[1]
-                    y_upgrade = item[2]-15
-                    break
-            
-            if x_upgrade == 0 and y_upgrade == 0:
-                return False
-            else:
-                self.tap(x_upgrade, y_upgrade)
-                time.sleep(3)
-                self.tap(270,330) # 도움 버튼 누르기
-                time.sleep(1)
-                return True
-
+                keywords = ["업그레이드", "업그레", "업그", "레이드"]
+                if any(keyword in text for keyword in keywords):
+                    self.tap(400,910)
+                    time.sleep(1)
+                    abnormal = self.check_abnormal()
+                    if abnormal == False :
+                        self.tap(270,330) # 도움 버튼
+                    return True
 
         self.tap(10,415)
         time.sleep(1)
@@ -678,18 +712,100 @@ class ADB:
             self.tap(305,285) # 건물 1
         elif building == 2 :
             self.tap(305,335) # 건물 2
-        time.sleep(3)
+        time.sleep(2)
 
 
-        self.tap(260,420) # 한번 눌러주기
-        time.sleep(1)
-        self.tap(270,420) # 한번 눌러주기
-        time.sleep(1)
+        # ====================
+        # 1번 케이스 일반 건물
+        # ====================
+
+        # 건물 확인
+        self.screen_shot(name="_check_building")
+        result = self.get_ocr_raw_advanced(file_name="capture_check_building.png", x_min=200, x_max=350, y_min=300, y_max=335, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+        processed_result = self.process_ocr(result=result, x_min=200, x_max=350, y_min=300, y_max=335, y_threshold=10, scale=3, merge=False)
+
+        keywords = ["보병", "기병", "궁병"]
+        for result in processed_result :
+            text = str(result[0]).replace(" ", "")
+            if any(keyword in text for keyword in keywords): # 
+                self.tap(365,550) # 훈련 버튼
+                time.sleep(0.5)
+                
+                # 훈련 상태인지 체크
+                self.screen_shot(name="_check_training")
+                result = self.get_ocr_raw_advanced(file_name="capture_check_training.png", x_min=320, x_max=440, y_min=810, y_max=855, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+                processed_result = self.process_ocr(result=result, x_min=320, x_max=440, y_min=810, y_max=855,  y_threshold=10, scale=3, merge=False)
+                for result in processed_result :
+                    if "가속" in result[0] :
+                        self.tap(465,685) # 취소 버튼
+                        time.sleep(0.5)
+                        self.tap(380,590)
+                        time.sleep(0.5)
+                        break
+                self.back()
+                time.sleep(0.5)
+                self.tap(275,400)
+                time.sleep(0.5)
+
+        # 대사관에 도움 요청 떠있는 경우 건물 눌러도 업그레이드 안뜨는 경우 있음음
+        if processed_result == [] : 
+            self.tap(275,460)
+            time.sleep(0.5)
 
 
-        for _ in range(10):
-            if build_city_try(self) == False :
+
+        # 좌표 확인
+        x = 0
+        y = 0
+
+        self.screen_shot(name="_upgrade_button")
+        result = self.get_ocr_raw_advanced(file_name="capture_upgrade_button.png", x_min=170, x_max=410, y_min=520, y_max=640, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+        processed_result = self.process_ocr(result=result, x_min=170, x_max=410, y_min=520, y_max=640, y_threshold=10, scale=3, merge=False)
+
+        for result in processed_result :
+            text = str(result[0]).replace(" ", "")
+
+            keywords = ["업그레이드", "업그레", "업그", "레이드", "건설설"]
+            if any(keyword in text for keyword in keywords):
+                x = result[1]
+                y = result[2] - 40
                 break
+
+        # 업그레이드 버튼이 인식 된 경우
+        if x != 0 and y != 0 :
+            self.tap(x, y)
+            time.sleep(1)
+            self.tap(390,750)
+            time.sleep(2)
+            abnormal = self.check_abnormal()
+            if abnormal == False :
+                self.tap(270,330) # 도움 버튼
+            return True
+
+        # ====================
+        # ====================
+
+
+        # ====================
+        # 2번 케이스 특수 건물
+        # ====================
+        self.tap(450,465) # 일단 업그레이드 버튼 눌러보기
+        time.sleep(2)
+
+        if upgrade_button(self) :
+            return True
+
+        for _ in range(10) :
+            self.tap(450,500) # 업그레이드 해보기
+            time.sleep(0.5)
+            self.tap(450,465) # 일단 업그레이드 버튼 눌러보기
+            time.sleep(2)
+            if upgrade_button(self) :
+                return True
+        # ====================
+        # ====================
+
+
 
 
 
@@ -803,7 +919,7 @@ class ADB:
 
             self.screen_shot(name="_upgrade_check")
             result = self.get_ocr_raw(file_name="capture_upgrade_check.png", x_min=110, x_max=465, y_min=470, y_max=680, y_threshold=10, scale=3)
-            processed_result = self.process_ocr(result=result, x_min=110, x_max=465, y_min=470, y_max=680, y_threshold=10, scale=3)
+            processed_result = self.process_ocr(result=result, x_min=110, x_max=465, y_min=470, y_max=680, y_threshold=10, scale=3, merge=False)
 
             has_detail = any("상세" in str(item[0]) for item in processed_result)
             # 업그레이드 여부를 개선된 함수로 판단
@@ -821,13 +937,18 @@ class ADB:
                 if first_upgrade is not None:
                     x = first_upgrade[1]
                     y = first_upgrade[2]
-                    # 분리 강인성: 좌표 변환은 기존대로
-                    if "상세 업그레이드" == first_upgrade[0] :
-                        return result, x+50, y-50
-                    elif "업그레이드" == first_upgrade[0] or "업그레이드" in str(first_upgrade[0]):
+
+                    if "업그레이드" == first_upgrade[0] or "업그레이드" in str(first_upgrade[0]):
                         return result, x, y-50
-                    else:
-                        return result, x+50, y-50
+
+
+                    # # 분리 강인성: 좌표 변환은 기존대로
+                    # if "상세 업그레이드" == first_upgrade[0] :
+                    #     return result, x+50, y-50
+                    # elif "업그레이드" == first_upgrade[0] or "업그레이드" in str(first_upgrade[0]):
+                    #     return result, x, y-50
+                    # else:
+                    #     return result, x+50, y-50
 
             return result, x, y
 
@@ -1211,8 +1332,8 @@ class ADB:
         time.sleep(0.5)
         self.screen_shot(name="_hero")
 
-        result = self.get_ocr_raw(file_name="capture_hero.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1)
-        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1, merge=True)
+        result = self.get_ocr_raw(file_name="capture_hero.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
 
         processed_result
 
@@ -1260,12 +1381,12 @@ class ADB:
 
         self.tap(10,415)
         time.sleep(1)
-        self.drag_with_adb(170, 625, 170, 275, duration_ms=500)
+        self.drag_with_adb(170, 625, 170, 275, duration_ms=800)
         time.sleep(0.5)
         self.screen_shot(name="_supply")
 
-        result = self.get_ocr_raw(file_name="capture_supply.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1)
-        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=1, merge=True)
+        result = self.get_ocr_raw(file_name="capture_supply.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
 
         processed_result
 
@@ -1299,11 +1420,11 @@ class ADB:
 
         self.tap(10,415)
         time.sleep(1)
-        self.drag_with_adb(170, 625, 170, 275, duration_ms=500)
+        self.drag_with_adb(170, 625, 170, 275, duration_ms=800)
         time.sleep(1)
         self.screen_shot(name="_union_research")
 
-        result = self.get_ocr_raw_advanced(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, binary_threshold=170)
+        result = self.get_ocr_raw(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
         processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
 
 
@@ -1389,8 +1510,8 @@ class ADB:
         time.sleep(1)
         self.screen_shot(name="_quest")
 
-        result = self.get_ocr_raw(file_name="capture_quest.png", x_min=360, x_max=530, y_min=360, y_max=750, y_threshold=10, scale=1)
-        processed_result = self.process_ocr(result=result, x_min=360, x_max=530, y_min=360, y_max=750, y_threshold=10, scale=1, merge=True)
+        result = self.get_ocr_raw(file_name="capture_quest.png", x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=1, merge=True)
         print(processed_result)
 
         for item in processed_result:
@@ -1754,6 +1875,26 @@ class ADB:
         return result_text    
 
 
+
+    def check_abnormal(self) :
+
+        itr = 0
+
+        while True :
+
+            # 비정상 화면 해결
+            state = self.get_state()
+            if state["action"] == False :
+                itr = itr + 1
+                break
+            time.sleep(1)
+
+        if itr == 0 : # abnormal 없음
+            return False
+        else : 
+            return True
+
+
         
             
 
@@ -1781,7 +1922,7 @@ def init_bluestacks_and_adbs():
         [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_14"],
         [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_15"],
         # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_7"],
-        # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_8"],
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_8"],
         # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_9"],
         # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_10"],
         # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_11"],
@@ -1803,7 +1944,7 @@ def init_bluestacks_and_adbs():
     adbs.append(ADB(port=5695))
     adbs.append(ADB(port=5705))
     # adbs.append(ADB(port=5625))
-    # adbs.append(ADB(port=5635))
+    adbs.append(ADB(port=5635))
     # adbs.append(ADB(port=5645))
     # adbs.append(ADB(port=5655))
     # adbs.append(ADB(port=5665))
@@ -1957,18 +2098,29 @@ def run_one_adb(itr, adb):
 
                 adb.get_people()
                 time.sleep(1)
+
                 check_abnormal(adb)
-                time.sleep(1)
                 adb.read_letter()
                 time.sleep(1)
+
                 check_abnormal(adb)
-                time.sleep(1)
                 adb.get_VIP()
                 time.sleep(1)
+
+                check_abnormal(adb)
+                adb.get_money()
+                time.sleep(1)
+
+            
+
+            
+
 
 
 
             # 현재 위치 판단 (예외처리)
+            check_abnormal(adb)
+
             adb.screen_shot(name="_inout")
             adb.crop_image(file_name="capture_inout.png", x_min=465, x_max=505, y_min=930, y_max=955)
             result = adb.compare_inout(cropped_file_name="cropped_capture_inout.png")  # "in" 또는 "out"
@@ -1983,19 +2135,34 @@ def run_one_adb(itr, adb):
 
 
 
-            build1, build2, unit1, unit2, unit3, research = adb.state_check()
-            print(f"adb{itr}", build1, build2, unit1, unit2, unit3, research)
 
-            queue_check = adb.state_check2()
-            if queue_check == True :
-                time.sleep(1)
-                stamina = adb.get_stamina()
+            state = adb.state_check()
+            [build1, build2, unit1, unit2, unit3, research] = [3, 3, 3, 3, 3, 3]
+            queue_check = False
+            if state is not False :
+                [build1, build2, unit1, unit2, unit3, research] = state[0]
+                queue_check = any(str(x) == "1" for x in state[1])
+                print(f"adb{itr} : {state[0]}")
+                print(f"adb{itr} : {state[1]}")
+                print(f"adb{itr} : {queue_check}")
+
+                if queue_check == True :
+                    stamina = adb.get_stamina()
+
+
+
+            # build1, build2, unit1, unit2, unit3, research = adb.state_check()
+            # print(f"adb{itr}", build1, build2, unit1, unit2, unit3, research)
+
+            # queue_check = adb.state_check2()
+            # if queue_check == True :
+            #     time.sleep(1)
+            #     stamina = adb.get_stamina()
 
             
-            check_exception_case(adb)
-            time.sleep(1)
+            # check_exception_case(adb)
+            # time.sleep(1)
             check_abnormal(adb)
-            time.sleep(1)
 
             if unit1 == 2 :
                 adb.get_unit(type="보병")
@@ -2011,10 +2178,9 @@ def run_one_adb(itr, adb):
                 # print("궁병 훈련 완료")
 
 
-            check_exception_case(adb)
-            time.sleep(1)
+            # check_exception_case(adb)
+            # time.sleep(1)
             check_abnormal(adb)
-            time.sleep(1)
 
 
             if adb.check_help() == True :
@@ -2022,19 +2188,18 @@ def run_one_adb(itr, adb):
                 time.sleep(1)
 
             if build1 == 1 :
-                adb.build_city(building=1)
+                adb.build_city_new(building=1)
                 time.sleep(1)
                 # print("건물 1 건설 시작")
             if build2 == 1 :
-                adb.build_city(building=2)
+                adb.build_city_new(building=2)
                 time.sleep(1)
                 # rint("건물 2 건설 시작")
 
 
-            check_exception_case(adb)
-            time.sleep(1)
+            # check_exception_case(adb)
+            # time.sleep(1)
             check_abnormal(adb)
-            time.sleep(1)
 
 
             if unit1 in (1, 2) or unit2 in (1, 2) or unit3 in (1, 2):
@@ -2044,26 +2209,25 @@ def run_one_adb(itr, adb):
                     adb.tap(400,820) # 연맹 도움
                     time.sleep(1)
 
-                build1, build2, unit1, unit2, unit3, research = adb.state_check()
-                print(build1, build2, unit1, unit2, unit3, research)
 
-
-                if unit1 == 1 and adb.infantry == False and (build1 != 1 and build2 != 1) :
+                if unit1 == 1 :
                     adb.unit_training(unit="보병")
                     time.sleep(1)
                     # print("보병 훈련 시작")
-                if unit2 == 1 and adb.calvary == False and (build1 != 1 and build2 != 1) :
+                if unit2 == 1 :
                     adb.unit_training(unit="기병")
                     time.sleep(1)
                     # print("기병 훈련 시작")
-                if unit3 == 1 and adb.archer == False and (build1 != 1 and build2 != 1) :
+                if unit3 == 1 :
                     adb.unit_training(unit="궁병")
                     time.sleep(1)
                     # print("궁병 훈련 시작")
 
 
             check_abnormal(adb)
-            time.sleep(1)
+            if adb.check_help() == True :
+                adb.tap(400,820) # 연맹 도움
+                time.sleep(1)
 
             if research == 1 :
                 adb.research()
@@ -2071,7 +2235,9 @@ def run_one_adb(itr, adb):
 
             
             check_abnormal(adb)
-            time.sleep(1)
+            if adb.check_help() == True :
+                adb.tap(400,820) # 연맹 도움
+                time.sleep(1)
 
 
             adb.union_research()
@@ -2116,7 +2282,23 @@ def run_one_adb(itr, adb):
                         time.sleep(3)
 
 
-                        min_value = min(bread_value, wood_value, stone_value, iron_value)
+                        resource_list = [bread_value, wood_value, stone_value, iron_value]
+                        
+                        # 이미 수집 중인 자원은 배제
+                        if "빵" in state[1] :
+                            resource_list.remove(bread_value)
+                        elif "목재" in state[1] :
+                            resource_list.remove(wood_value)
+                        elif "석재" in state[1] :
+                            resource_list.remove(stone_value)
+                        elif "철광" in state[1] :
+                            resource_list.remove(iron_value)
+
+                        if resource_list == [] :
+                            resource_list = [bread_value, wood_value, stone_value, iron_value]
+
+
+                        min_value = min(resource_list)
 
                         if min_value == bread_value:
                             resource = "빵"
@@ -2239,14 +2421,10 @@ def run_one_adb(itr, adb):
                 adb.tap(380,595) # reconnect
                 time.sleep(10)
 
+
             check_abnormal(adb)
 
             check_exception_case(adb)
-
-            adb.get_money()
-            time.sleep(1)
-
-            check_abnormal(adb)
 
             adb.get_hero()
             time.sleep(1)
