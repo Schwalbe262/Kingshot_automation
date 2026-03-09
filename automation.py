@@ -30,7 +30,7 @@ class ADB:
         self.port = port
         self.device_id = f"{self.device_ip}:{self.port}"
 
-        self.ocr = PaddleOCR(lang="korean", use_gpu=False, show_log=False)
+        self.ocr = PaddleOCR(lang="korean", use_gpu=True, show_log=False)
 
         self.state = 0 # 0 : 대기방, 1 : 게임시작, 2 : 그 외
         self.state_cul = 0 # 같은 state 몇번 지속인지 기록
@@ -2101,7 +2101,7 @@ def check_exception_case(adb) :
 
     check_resource = adb.msg_check(msg="오프라인", x_min=190, x_max=350, y_min=170, y_max=205, y_threshold=10, scale=3)
     if check_resource == True :
-        time.sleep(300)
+        time.sleep(3)
         adb.back()
         time.sleep(3)
         check_abnormal(adb)
@@ -2119,7 +2119,20 @@ def check_exception_case(adb) :
         time.sleep(3)
 
 
+def reconnection(adb) :
+
+    reconnect_check = adb.check_reconnect()
+    if reconnect_check == True :
+        print("reconnect")
+        time.sleep(300)
+        adb.tap(380,595) # reconnect
+        time.sleep(10)
+        return True
+
+
 def check_abnormal(adb) :
+
+    rc = reconnection(adb)
 
     while True :
 
@@ -2128,6 +2141,14 @@ def check_abnormal(adb) :
         if state["action"] == False :
             break
         time.sleep(1)
+
+    if rc == True :
+        return True
+    else :
+        return False
+
+
+
 
 
 
@@ -2150,49 +2171,29 @@ def run_one_adb(itr, adb):
             adb.start_kingshot()
             time.sleep(5)
 
-        # reconnet 창이 떠있는지 확인
-        reconnect_check = adb.check_reconnect()
-        reconnect_check 
+        check_abnormal(adb)
 
+        check_exception_case(adb)
 
-        if reconnect_check == True :
-            print("reconnection")
-        elif reconnect_check == False :
-
-
+        if loop_count.get(itr, 0) == 0 :
             
+            adb.get_people()
+            time.sleep(1)
+
             check_abnormal(adb)
+            adb.get_VIP()
+            time.sleep(1)
 
-            
-            check_exception_case(adb)
+            check_abnormal(adb)
+            adb.get_money()
+            time.sleep(1)
 
-
-            if loop_count.get(itr, 0) == 0 :
-
-                adb.get_people()
-                time.sleep(1)
-
-                check_abnormal(adb)
-                adb.read_letter()
-                time.sleep(1)
-
-                check_abnormal(adb)
-                adb.get_VIP()
-                time.sleep(1)
-
-                check_abnormal(adb)
-                adb.get_money()
-                time.sleep(1)
-
-            
-
-            
-
-
-
+        
+        while True :
 
             # 현재 위치 판단 (예외처리)
-            check_abnormal(adb)
+            if check_abnormal(adb) :
+                continue
 
             adb.screen_shot(name="_inout")
             adb.crop_image(file_name="capture_inout.png", x_min=465, x_max=505, y_min=930, y_max=955)
@@ -2205,9 +2206,6 @@ def run_one_adb(itr, adb):
             if adb.check_help() == True :
                 adb.tap(400,820) # 연맹 도움
                 time.sleep(1)
-
-
-
 
             state = adb.state_check()
             [build1, build2, unit1, unit2, unit3, research] = [3, 3, 3, 3, 3, 3]
@@ -2223,38 +2221,22 @@ def run_one_adb(itr, adb):
                     stamina = adb.get_stamina()
 
 
+            if check_abnormal(adb) :
+                continue
 
-            # build1, build2, unit1, unit2, unit3, research = adb.state_check()
-            # print(f"adb{itr}", build1, build2, unit1, unit2, unit3, research)
-
-            # queue_check = adb.state_check2()
-            # if queue_check == True :
-            #     time.sleep(1)
-            #     stamina = adb.get_stamina()
-
-            
-            # check_exception_case(adb)
-            # time.sleep(1)
-            check_abnormal(adb)
 
             if unit1 == 2 :
                 adb.get_unit(type="보병")
                 time.sleep(1)
-                # print("보병 훈련 완료")
             if unit2 == 2 :
                 adb.get_unit(type="기병")
                 time.sleep(1)
-                # print("기병 훈련 완료")
             if unit3 == 2 :
                 adb.get_unit(type="궁병")
                 time.sleep(1)
-                # print("궁병 훈련 완료")
 
-
-            # check_exception_case(adb)
-            # time.sleep(1)
-            check_abnormal(adb)
-
+            if check_abnormal(adb) :
+                continue
 
             if adb.check_help() == True :
                 adb.tap(400,820) # 연맹 도움
@@ -2263,41 +2245,30 @@ def run_one_adb(itr, adb):
             if build1 == 1 :
                 adb.build_city_new(building=1)
                 time.sleep(1)
-                # print("건물 1 건설 시작")
             if build2 == 1 :
                 adb.build_city_new(building=2)
                 time.sleep(1)
                 print("건물 2 건설 시작")
 
-
-            # check_exception_case(adb)
-            # time.sleep(1)
-            check_abnormal(adb)
-
-
             if unit1 in (1, 2) or unit2 in (1, 2) or unit3 in (1, 2):
-
-                check_exception_case(adb)
+                if check_abnormal(adb) :
+                    continue
                 if adb.check_help() == True :
                     adb.tap(400,820) # 연맹 도움
                     time.sleep(1)
 
-
                 if unit1 == 1 :
                     adb.unit_training(unit="보병")
                     time.sleep(1)
-                    # print("보병 훈련 시작")
                 if unit2 == 1 :
                     adb.unit_training(unit="기병")
                     time.sleep(1)
-                    # print("기병 훈련 시작")
                 if unit3 == 1 :
                     adb.unit_training(unit="궁병")
                     time.sleep(1)
-                    # print("궁병 훈련 시작")
 
-
-            check_abnormal(adb)
+            if check_abnormal(adb) :
+                continue
             if adb.check_help() == True :
                 adb.tap(400,820) # 연맹 도움
                 time.sleep(1)
@@ -2306,31 +2277,22 @@ def run_one_adb(itr, adb):
                 adb.research()
                 time.sleep(1)
 
-            
-            check_abnormal(adb)
+            if check_abnormal(adb) :
+                continue
             if adb.check_help() == True :
                 adb.tap(400,820) # 연맹 도움
                 time.sleep(1)
 
-
             adb.union_research()
             time.sleep(1)
 
-
-
             # 자원 채취
             if queue_check == True :
-
-                if reconnect_check == True :
-                    adb.tap(380,595) # reconnect
-                    time.sleep(10)
-
-                check_exception_case(adb)
-
-                check_abnormal(adb)
-
-                # adb.get_money()
-                # time.sleep(1)
+                if check_abnormal(adb) :
+                    continue
+                if adb.check_help() == True :
+                    adb.tap(400,820) # 연맹 도움
+                    time.sleep(1)
 
                 # 현재 위치 판단
                 adb.screen_shot(name="_inout")
@@ -2339,13 +2301,10 @@ def run_one_adb(itr, adb):
 
                 if result == "out" : # out 버튼이 뜨는 경우 (도시 안에 있는 경우)
                     adb.tap(490,910) # 야외로 나가기
-                    time.sleep(10)
-
+                    time.sleep(5)
 
                     if stamina > 50 : # 사냥
                         adb.hunting()
-
-        
                     else : # 자원 채취
                         bread_value, wood_value, stone_value, iron_value = adb.resource_remain()
                         print(f"adb{itr} : {bread_value/1e+6}, {wood_value/1e+6}, {stone_value/1e+6}, {iron_value/1e+6}")
@@ -2353,7 +2312,6 @@ def run_one_adb(itr, adb):
                         iron_value = iron_value * 20
 
                         time.sleep(3)
-
 
                         # 이미 수집중인 자원 배제제
                         resource_list = [bread_value, wood_value, stone_value, iron_value]
@@ -2364,30 +2322,25 @@ def run_one_adb(itr, adb):
                                 try:
                                     resource_list.remove(bread_value)
                                 except ValueError:
-                                    # 이미 제거된 경우 에러 무시
                                     pass
                             elif "목재" in resource_ex :
                                 try:
                                     resource_list.remove(wood_value)
                                 except ValueError:
-                                    # 이미 제거된 경우 에러 무시
                                     pass
                             elif "석재" in resource_ex :
                                 try:
                                     resource_list.remove(stone_value)
                                 except ValueError:
-                                    # 이미 제거된 경우 에러 무시
                                     pass
                             elif "철광" in resource_ex :
                                 try:
                                     resource_list.remove(iron_value)
                                 except ValueError:
-                                    # 이미 제거된 경우 에러 무시
                                     pass
 
                         if resource_list == [] :
                             resource_list = [bread_value, wood_value, stone_value, iron_value]
-
 
                         min_value = min(resource_list)
 
@@ -2409,156 +2362,82 @@ def run_one_adb(itr, adb):
 
                         result = adb.resource_farming(resource=resource)
 
+                    time.sleep(1)
 
-                    time.sleep(1)     
-
-                    adb.tap(490,910) # 도시로 돌아가기  
+                    adb.tap(490,910) # 도시로 돌아가기
 
                     time.sleep(5)
 
-                    check_abnormal(adb)
+                    if check_abnormal(adb) :
+                        continue
                     time.sleep(1)
 
                     adb.read_letter()
                     time.sleep(1)
 
-                    check_abnormal(adb)
+                    if check_abnormal(adb) :
+                        continue
                     time.sleep(1)
 
                     adb.get_quest()
                     time.sleep(1)
 
-                
-
-
-                
-
-
         
 
 
+            if loop_count.get(itr, 0) % 3 == 0 and switching % 6 <= 1:
+
+                print(f"adb{itr} loop 30 진입")
+
+                if check_abnormal(adb) :
+                    continue
+
+                check_exception_case(adb)
+
+                adb.get_hero()
+                time.sleep(1)
+
+                if check_abnormal(adb) :
+                    continue
+
+                adb.get_supply()
+                time.sleep(1)
 
 
+            if adb.port == 5555 and  loop_count.get(itr, 0) % 5 == 0 :
 
-        # # 각 adb 루프가 5번 돌면 한 번 자원 채취
-        # if loop_count.get(itr, 0) % 10 == 0 :
+                if check_abnormal(adb) :
+                    continue
+                adb.tap(35,35) # 초상화 클릭
+                time.sleep(1)
 
-        #     if reconnect_check == True :
-        #         adb.tap(380,595) # reconnect
-        #         time.sleep(10)
+                adb.screen_shot(name="_ID")
+                result = adb.get_ocr_raw(file_name="capture_ID.png", x_min=210, x_max=440, y_min=660, y_max=700, y_threshold=10, scale=3)
+                processed_result = adb.process_ocr(result=result, x_min=210, x_max=440, y_min=660, y_max=700, y_threshold=10, scale=3, merge=True)
 
-        #     check_exception_case(adb)
+                if any(s in processed_result[0][0] for s in ("fa", "ar", "rm")):
+                    farm = True
+                else :
+                    farm = False
 
-        #     check_abnormal(adb)
+                adb.tap(470,920) # 설정 클릭
+                time.sleep(1)
+                adb.tap(160,250) # 캐릭터 관리
+                time.sleep(1)
 
-        #     # adb.get_money()
-        #     # time.sleep(1)
+                if farm == True :
+                    adb.tap(270,400)
+                elif farm == False :
+                    adb.tap(270,520)
 
-        #     # 현재 위치 판단
-        #     adb.screen_shot(name="_inout")
-        #     adb.crop_image(file_name="capture_inout.png", x_min=465, x_max=505, y_min=930, y_max=955)
-        #     result = adb.compare_inout(cropped_file_name="cropped_capture_inout.png")  # "in" 또는 "out"
-
-        #     if result == "out" : # out 버튼이 뜨는 경우 (도시 안에 있는 경우)
-        #         adb.tap(490,910) # 야외로 나가기
-        #         time.sleep(10)
-
-
-        #     bread_value, wood_value, stone_value, iron_value = adb.resource_remain()
-        #     print(f"adb{itr} : {bread_value/1e+6}, {wood_value/1e+6}, {stone_value/1e+6}, {iron_value/1e+6}")
-        #     stone_value = stone_value * 5
-        #     iron_value = iron_value * 20
-
-        #     time.sleep(3)
-
-        #     for i in range(3):  # 루프 6번까지만 돌게
-        #         # 네 자원 값 중 가장 낮은 값 기준으로 리소스 이름 선택
-        #         min_value = min(bread_value, wood_value, stone_value, iron_value)
-
-        #         if min_value == bread_value:
-        #             resource = "빵"
-        #         elif min_value == wood_value:
-        #             resource = "목재"
-        #         elif min_value == stone_value:
-        #             resource = "석재"
-        #         else:
-        #             resource = "철광"
-
-        #         while True :
-        #             # 비정상 화면 해결
-        #             state = adb.get_state()
-        #             if state["action"] == False :
-        #                 break
-        #             time.sleep(1)
-
-        #         result = adb.resource_farming(resource=resource)
-        #         if result == False:  # 잔여 칸 없는 경우 break
-        #             break
-        #         time.sleep(1)
-
-        #     adb.tap(490,910) # 도시로 돌아가기
-
-        #     if isinstance(adbs, list) and len(adbs) == 1:
-        #         time.sleep(10)
-
-        #     # timer = time.time()
-
-
-        if loop_count.get(itr, 0) % 10 == 0 :
-
-            print(f"adb{itr} loop 30 진입")
-
-            if reconnect_check == True :
-                adb.tap(380,595) # reconnect
+                time.sleep(1)
+                adb.tap(385,600) # 확인
                 time.sleep(10)
 
-
-            check_abnormal(adb)
-
-            check_exception_case(adb)
-
-            adb.get_hero()
-            time.sleep(1)
-
-            check_abnormal(adb)
-
-            adb.get_supply()
-            time.sleep(1)
-
-
-        if adb.port == 5555 and  loop_count.get(itr, 0) % 20 == 0 :
-
-            check_abnormal(adb)
-            adb.tap(35,35) # 초상화 클릭
-            time.sleep(1)
-
-            adb.screen_shot(name="_ID")
-            result = adb.get_ocr_raw(file_name="capture_ID.png", x_min=210, x_max=440, y_min=660, y_max=700, y_threshold=10, scale=3)
-            processed_result = adb.process_ocr(result=result, x_min=210, x_max=440, y_min=660, y_max=700, y_threshold=10, scale=3, merge=True)
-
-            if any(s in processed_result[0][0] for s in ("fa", "ar", "rm")):
-                farm = True
-            else :
-                farm = False
-
-            adb.tap(470,920) # 설정 클릭
-            time.sleep(1)
-            adb.tap(160,250) # 캐릭터 관리
-            time.sleep(1)
-
-            if farm == True :
-                adb.tap(270,400)
-            elif farm == False :
-                adb.tap(270,520)
-
-            time.sleep(1)
-            adb.tap(385,600) # 확인
-            time.sleep(10)
-
-            if switching == 0 :
-                adb.itr = 0
-            switching += 1
-            
+                if switching == 0 :
+                    adb.itr = 0
+                switching += 1
+                
 
 
 
@@ -2568,8 +2447,8 @@ def run_one_adb(itr, adb):
 
 
 
-        # 이 adb의 루프 카운트 +1 (각자 따로 돔)
-        loop_count[itr] = loop_count.get(itr, 0) + 1
+            # 이 adb의 루프 카운트 +1 (각자 따로 돔)
+            loop_count[itr] = loop_count.get(itr, 0) + 1
 
     except Exception as e:
         print(f"adb{itr} 오류: {e}")
