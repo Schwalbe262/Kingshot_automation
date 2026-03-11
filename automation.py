@@ -546,7 +546,7 @@ class ADB:
                 # print("================================")
 
                 if position == [] :
-                    self.drag_with_adb(270, 530, 270, 450, duration_ms=100)
+                    self.drag_with_adb(270, 500, 270, 450, duration_ms=500)
                     time.sleep(1)
                     continue
 
@@ -604,7 +604,7 @@ class ADB:
                             return True
 
                 time.sleep(1)
-                self.drag_with_adb(270, 530, 270, 450, duration_ms=100)
+                self.drag_with_adb(270, 500, 270, 450, duration_ms=500)
                 time.sleep(1)
 
             return False
@@ -2159,6 +2159,8 @@ def run_one_adb(itr, adb):
 
         adb.itr = itr
         switching = 0
+
+        
 
         # 튕겼는지 체크
 
