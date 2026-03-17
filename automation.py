@@ -1996,7 +1996,7 @@ class ADB:
         img_e = cv2.Canny(img_g, 80, 160)
 
         template_dir = os.path.join(os.getcwd(), "template")
-        template_files = ["template1.png", "template2.png", "template3.png", "template4.png"]  # 비교할 템플릿들
+        template_files = ["template1.png", "template2.png", "template3.png", "template4.png", "template5.png"]  # 비교할 템플릿들
         threshold = 0.55
 
         detections = []  # (template_name, cx, cy, score)
@@ -2855,7 +2855,7 @@ def run_one_adb(itr, adb):
             else :
                 result2 = None
 
-            if result1 == "out" or result2 == "in" : # in 버튼이 뜨는 경우 (밖에 있는 경우)
+            if result1 == "in" or result2 == "out" : # in 버튼이 뜨는 경우 (밖에 있는 경우)
                 adb.tap(490,910) # 안으로 들어오기
                 time.sleep(10)
 
