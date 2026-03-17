@@ -25,6 +25,8 @@ import random
 
 import threading
 
+import shutil
+
 ADB_COMMAND_TIMEOUT_SEC = 20
 OCR_CONCURRENCY_LIMIT = 2
 OCR_SEMAPHORE = threading.Semaphore(OCR_CONCURRENCY_LIMIT)
@@ -386,6 +388,35 @@ class ADB:
         return state
 
 
+    def solve_resource(self) :
+
+        self.screen_shot(name="_resource_check")
+
+        result = self.get_ocr_raw_advanced(file_name="capture_resource_check.png", x_min=185, x_max=360, y_min=825, y_max=870, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+        processed_result = self.process_ocr(result=result, x_min=185, x_max=360, y_min=825, y_max=870, y_threshold=10, scale=3, merge=True)
+
+        # processed_result의 0번 인덱스에 '전체', '일괄', '보충'이 포함되어 있는지 체크
+        contains_keywords = False
+        keywords = ['전체', '일괄', '보충']
+
+        for row in processed_result:
+            text = str(row[0]) if isinstance(row, (list, tuple)) and len(row) else str(row)
+            if any(keyword in text for keyword in keywords):
+                contains_keywords = True
+                break
+
+        if contains_keywords == True :
+            self.tap(270,860)
+            time.sleep(1)
+            self.tap(385,780)
+            time.sleep(1)
+            return True
+        else :
+            return False
+
+        
+
+
     def solve_abnormal(self) :
 
         return 0
@@ -654,6 +685,10 @@ class ADB:
 
                             self.tap(x_check, y_check)  # 연구 버튼
                             time.sleep(1)
+
+                            if self.solve_resource() == True :
+                                self.tap(x_check, y_check)  # 연구 버튼
+                                time.sleep(1)
                                     
                             self.tap(455, 895)  # 연맹 협조
                             time.sleep(1)
@@ -783,6 +818,13 @@ class ADB:
             self.tap(305,335) # 건물 2
         time.sleep(2*self.time)
 
+        if self.solve_resource() == True :
+            if building == 1 :
+                self.tap(305,285) # 건물 1
+            elif building == 2 :
+                self.tap(305,335) # 건물 2
+            
+
 
         # ====================
         # 1번 케이스 일반 건물
@@ -844,6 +886,9 @@ class ADB:
         if x != 0 and y != 0 :
             self.tap(x, y)
             time.sleep(1*self.time)
+            if self.solve_resource() == True :
+                self.tap(x, y)
+                time.sleep(1*self.time)
             self.tap(390,750)
             time.sleep(2)
             abnormal = self.check_abnormal()
@@ -867,6 +912,9 @@ class ADB:
         for _ in range(10) :
             self.tap(450,500) # 업그레이드 해보기
             time.sleep(0.5*self.time)
+            if self.solve_resource() == True :
+                self.tap(450,500) # 업그레이드 해보기
+                time.sleep(0.5*self.time)
             self.tap(450,400) # 일단 업그레이드 버튼 눌러보기
             time.sleep(2*self.time)
             if upgrade_button(self) :
@@ -1188,6 +1236,9 @@ class ADB:
 
         time.sleep(3)
         self.tap(395,525) # 훈련버튼
+        if self.solve_resource() == True :
+            self.tap(390,830) # 생산버튼
+            time.sleep(2)
         time.sleep(1)
         self.tap(390,830) # 생산버튼
         time.sleep(2)
@@ -1931,7 +1982,7 @@ class ADB:
         self.tap(270,860) # 일괄 수령
         time.sleep(2)
         self.tap(270,860)
-        time.sleep(1)
+        time.sleep(3) # 애니메이션 사라질때까지 기다리기
 
 
         self.screen_shot(name="_hunt_event")
@@ -1973,6 +2024,14 @@ class ADB:
         # 아무것도 없을 경우
         if detections == [] : 
             self.back()
+            self.screen_shot()
+            report_dir = os.path.join(os.getcwd(), "report")
+            os.makedirs(report_dir, exist_ok=True)
+            src_path = f"{self.base}\\{self._f('capture.png')}"
+            random_name = f"empty_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}.png"
+            dst_path = os.path.join(report_dir, random_name)
+            if os.path.exists(src_path):
+                shutil.copy2(src_path, dst_path)
             time.sleep(1)
             return False
         # 뭔가 감지 된 경우
@@ -1990,11 +2049,11 @@ class ADB:
             result = self.get_ocr_raw_advanced(file_name="capture_hunt_state_check.png", x_min=65, x_max=145, y_min=5, y_max=45, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
             processed_result = self.process_ocr(result=result, x_min=65, x_max=145, y_min=5, y_max=45, y_threshold=10, scale=3, merge=True)
 
-            # 사냥 아닌 경우
+            # 보상 체크인 경우
             if any("이벤" in str(row[0]) or "벤트" in str(row[0]) for row in processed_result):
                 self.back()
                 time.sleep(1)
-                return False
+                return True
 
             # 주점토벌로 넘어간 경우
             result = self.get_ocr_raw_advanced(file_name="capture_hunt_state_check.png", x_min=360, x_max=440, y_min=885, y_max=925, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
@@ -2735,10 +2794,6 @@ def run_one_adb(itr, adb):
                     time.sleep(1)
 
                     check_abnormal(adb)
-                    adb.read_all_letter()
-                    time.sleep(1)
-
-                    check_abnormal(adb)
                     adb.union_reward()
                     time.sleep(1)
 
@@ -2752,7 +2807,10 @@ def run_one_adb(itr, adb):
                     adb.tap(400,820) # 연맹 도움
                     time.sleep(1)
 
-                
+                check_abnormal(adb)
+                adb.read_all_letter()
+                time.sleep(1)
+
                 check_abnormal(adb)
                 adb.get_supply()
                 time.sleep(1)
@@ -2901,7 +2959,7 @@ def run_one_adb(itr, adb):
                     adb.heal()
 
                     if stamina > 15 and adb.hunt_event() == True :
-                        continue
+                        pass
                     elif stamina > 60 and zero_count == 1 : # 사냥
                         if adb.port not in (5555, 5556):
                             adb.hunting2(level=2)
