@@ -471,7 +471,7 @@ class ADB:
             curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
             next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
 
-            if any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격"]):
+            if any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격", "집결", "대기"]):
                 result_s2.append(next_text)
                 index = index + 1
             elif any(keyword in curr_text for keyword in ["방앗", "앗간"]):
@@ -1556,8 +1556,50 @@ class ADB:
 
     def heal(self) :
 
-        self.tap(420,790) # 힐 버튼 클릭
-        time.sleep(1)
+        self.screen_shot(name="_heal")
+
+        img_path = f"{self.base}\\{self._f('capture_heal.png')}"
+        img = cv2.imread(img_path)
+        img_g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img_e = cv2.Canny(img_g, 80, 160)
+
+        template_dir = os.path.join(os.getcwd(), "template")
+        template_files = ["heal_template1.png"]  # 비교할 템플릿들
+        threshold = 0.55
+
+        detections = []  # (template_name, cx, cy, score)
+
+        for name in template_files:
+            tpl_path = os.path.join(template_dir, name)
+            tpl = cv2.imread(tpl_path)
+            if tpl is None:
+                print(f"[WARN] 템플릿 로드 실패: {tpl_path}")
+                continue
+
+            tpl_g = cv2.cvtColor(tpl, cv2.COLOR_BGR2GRAY)
+            tpl_e = cv2.Canny(tpl_g, 80, 160)
+
+            res = cv2.matchTemplate(img_e, tpl_e, cv2.TM_CCOEFF_NORMED)
+            ys, xs = np.where(res >= threshold)
+
+            w, h = tpl.shape[1], tpl.shape[0]
+            for x, y in zip(xs, ys):
+                cx = x + w // 2
+                cy = y + h // 2
+                score = float(res[y, x])
+                detections.append((name, cx, cy, score))
+
+        # 점수 높은 순으로 보기
+        detections.sort(key=lambda x: x[3], reverse=True)
+
+        # 아무것도 없을 경우
+        if detections == [] : 
+            time.sleep(1)
+            return False
+        # 힐 버튼 클릭
+        else :
+            self.tap(detections[0][1], detections[0][2])
+            time.sleep(1)
 
         self.screen_shot(name="_heal")
 
@@ -1755,9 +1797,9 @@ class ADB:
                         if "기부" in str(item[0]):
                             x = item[1]
                             y = item[2]
-                            for _ in range(5):
+                            for _ in range(10):
                                 self.tap(385,765) # 기부 버튼
-                                time.sleep(1)
+                                time.sleep(0.5)
                             self.back()
                             time.sleep(1)
                             self.back()
@@ -2839,7 +2881,7 @@ def run_one_adb(itr, adb):
                 time.sleep(1)
 
             # 자원 채취
-            if queue_check == True and ((stamina > 60 or zero_count == 1) or (zero_count > 1)):
+            if queue_check == True and ((stamina > 15 or zero_count == 1) or (zero_count > 1)):
                 if check_abnormal(adb) == 5 :
                     time.sleep(0.5)
                     continue
@@ -2858,8 +2900,7 @@ def run_one_adb(itr, adb):
 
                     adb.heal()
 
-
-                    if adb.hunt_event() :
+                    if stamina > 15 and adb.hunt_event() == True :
                         continue
                     elif stamina > 60 and zero_count == 1 : # 사냥
                         if adb.port not in (5555, 5556):
