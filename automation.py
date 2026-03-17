@@ -805,6 +805,9 @@ class ADB:
                 if any(keyword in text for keyword in keywords):
                     self.tap(400,910)
                     time.sleep(1*self.time)
+                    if self.solve_resource() == True :
+                        self.tap(400,910)
+                        time.sleep(1*self.time)
                     abnormal = self.check_abnormal()
                     if abnormal == False :
                         self.tap(270,330) # 도움 버튼
@@ -1236,12 +1239,12 @@ class ADB:
 
         time.sleep(3)
         self.tap(395,525) # 훈련버튼
-        if self.solve_resource() == True :
-            self.tap(390,830) # 생산버튼
-            time.sleep(2)
         time.sleep(1)
         self.tap(390,830) # 생산버튼
         time.sleep(2)
+        if self.solve_resource() == True :
+            self.tap(390,830) # 생산버튼
+            time.sleep(2)
 
         check_resource = check_msg(msg="추가", x_min=210, x_max=330, y_min=90, y_max=125, y_threshold=10, scale=3)
         if check_resource == True :
@@ -2537,7 +2540,7 @@ def init_bluestacks_and_adbs():
         time.sleep(2)  # 명령 실행 간 지연 시간 추가
 
 
-    time.sleep(3)
+    time.sleep(0)
 
 
     # ADB 연결 및 kingshot 실행
@@ -2558,7 +2561,7 @@ def init_bluestacks_and_adbs():
         adb.start_kingshot()
         time.sleep(1)
 
-    time.sleep(15)
+    time.sleep(12)
 
     success = True
 
@@ -2838,9 +2841,21 @@ def run_one_adb(itr, adb):
 
             adb.screen_shot(name="_inout")
             adb.crop_image(file_name="capture_inout.png", x_min=465, x_max=505, y_min=930, y_max=955)
-            result = adb.compare_inout(cropped_file_name="cropped_capture_inout.png")  # "in" 또는 "out"
+            result1 = adb.compare_inout(cropped_file_name="cropped_capture_inout.png")  # "in" 또는 "out"
 
-            if result == "in" : # in 버튼이 뜨는 경우 (밖에 있는 경우)
+            result = adb.get_ocr_raw_advanced(file_name="capture_inout.png", x_min=465, x_max=505, y_min=930, y_max=955, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+            processed_result = adb.process_ocr(result=result, x_min=465, x_max=505, y_min=930, y_max=955, y_threshold=10, scale=3, merge=True)
+
+            if processed_result == [] :
+                return None
+            elif processed_result[0][0] == "야외" :
+                result2 = "in" # 안에 있음을 뜻함
+            elif processed_result[0][0] == "도시" :
+                result2 = "out" # 밖에 있음을 뜻함함
+            else :
+                result2 = None
+
+            if result1 == "out" or result2 == "in" : # in 버튼이 뜨는 경우 (밖에 있는 경우)
                 adb.tap(490,910) # 안으로 들어오기
                 time.sleep(10)
 
@@ -2950,22 +2965,30 @@ def run_one_adb(itr, adb):
                 # 현재 위치 판단
                 adb.screen_shot(name="_inout")
                 adb.crop_image(file_name="capture_inout.png", x_min=465, x_max=505, y_min=930, y_max=955)
-                result = adb.compare_inout(cropped_file_name="cropped_capture_inout.png")  # "in" 또는 "out"
+                result1 = adb.compare_inout(cropped_file_name="cropped_capture_inout.png")  # "in" 또는 "out"
 
-                if result == "out" : # out 버튼이 뜨는 경우 (도시 안에 있는 경우)
+
+
+                result = adb.get_ocr_raw_advanced(file_name="capture_inout.png", x_min=465, x_max=505, y_min=930, y_max=955, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+                processed_result = adb.process_ocr(result=result, x_min=465, x_max=505, y_min=930, y_max=955, y_threshold=10, scale=3, merge=True)
+
+                if processed_result == [] :
+                    return None
+                elif processed_result[0][0] == "야외" :
+                    result2 = "in" # 안에 있음을 뜻함
+                elif processed_result[0][0] == "도시" :
+                    result2 = "out" # 밖에 있음을 뜻함함
+                else :
+                    result2 = None
+
+
+                if result1 == "out" or result2 == "in" : # out 버튼이 뜨는 경우 (도시 안에 있는 경우)
                     adb.tap(490,910) # 야외로 나가기
                     time.sleep(5)
 
                     adb.heal()
 
-                    if stamina > 15 and adb.hunt_event() == True :
-                        pass
-                    elif stamina > 60 and zero_count == 1 : # 사냥
-                        if adb.port not in (5555, 5556):
-                            adb.hunting2(level=2)
-                        else :
-                            adb.hunting2(level=3)
-                    elif zero_count > 1 : # 자원 채취
+                    if zero_count > 1 : # 자원 채취
                         bread_value, wood_value, stone_value, iron_value = adb.resource_remain()
                         print(f"adb{itr} : {bread_value/1e+6}, {wood_value/1e+6}, {stone_value/1e+6}, {iron_value/1e+6}")
                         stone_value = stone_value * 5
@@ -3021,6 +3044,13 @@ def run_one_adb(itr, adb):
                             time.sleep(1)
 
                         result = adb.resource_farming(resource=resource)
+                    elif stamina > 15 and adb.hunt_event() == True :
+                        pass
+                    elif stamina > 60 and zero_count == 1 : # 사냥
+                        if adb.port not in (5555, 5556):
+                            adb.hunting2(level=2)
+                        else :
+                            adb.hunting2(level=3)
 
                     time.sleep(1)
 
