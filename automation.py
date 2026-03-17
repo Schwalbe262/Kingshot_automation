@@ -23,6 +23,12 @@ import traceback
 
 import random
 
+import threading
+
+ADB_COMMAND_TIMEOUT_SEC = 20
+OCR_CONCURRENCY_LIMIT = 2
+OCR_SEMAPHORE = threading.Semaphore(OCR_CONCURRENCY_LIMIT)
+
 class ADB: 
     def __init__(self, device_ip="127.0.0.1", port=5555):
         self.adb_path = "C:\\platform-tools-latest-windows\\platform-tools\\adb.exe"
@@ -43,6 +49,10 @@ class ADB:
         self.itr = 0
 
         self.time = 1
+        self._last_help_check_ts = 0.0
+        self._last_help_check_result = False
+        self._last_reconnect_check_ts = 0.0
+        self._last_reconnect_check_result = False
 
     def _f(self, name):
         """동시 실행 시 디바이스별 고유 파일명 (포트 접미사)."""
@@ -50,13 +60,29 @@ class ADB:
             return name + f'_{self.port}.png'
         return name.replace('.png', f'_{self.port}.png')
 
+    def _run_ocr(self, image_path, retries=2):
+        """
+        OCR 호출을 세마포어로 제한해 동시 과부하를 줄이고,
+        일시 실패 시 짧게 재시도한다.
+        """
+        last_error = None
+        for _ in range(retries):
+            try:
+                with OCR_SEMAPHORE:
+                    return self.ocr.ocr(image_path, cls=False)
+            except Exception as e:
+                last_error = e
+                time.sleep(0.2 * self.time)
+        raise RuntimeError(f"OCR 실패: {last_error}")
+
     def shell(self, command):
         try:
             result = subprocess.run(
                 command,
                 shell=True,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
+                timeout=ADB_COMMAND_TIMEOUT_SEC
             )
             stdout = result.stdout.decode('euc-kr', errors='ignore')
             stderr = result.stderr.decode('euc-kr', errors='ignore')
@@ -64,13 +90,34 @@ class ADB:
                 return stdout.strip()
             else:
                 return stderr.strip()
+        except subprocess.TimeoutExpired:
+            return f"Timeout: {command}"
         except Exception as e:
             return f"Exception occurred: {str(e)}"
 
     def connect(self):
+        def _connected(msg):
+            lowered = (msg or "").lower()
+            return ("connected to" in lowered) or ("already connected to" in lowered)
+
         command = f'{self.adb_path} connect {self.device_id}'
-        # print(f"Executing command: {command}")
-        return self.shell(command)
+        result = self.shell(command)
+        if _connected(result):
+            return result
+
+        # BlueStacks가 간헐적으로 Pie64_1을 5556으로 잡는 경우 자동 보정
+        if self.port == 5555:
+            fallback_port = 5556
+            fallback_device_id = f"{self.device_ip}:{fallback_port}"
+            fallback_command = f'{self.adb_path} connect {fallback_device_id}'
+            fallback_result = self.shell(fallback_command)
+            if _connected(fallback_result):
+                self.port = fallback_port
+                self.device_id = fallback_device_id
+                print("ADB 포트 자동 보정: 5555 -> 5556")
+                return fallback_result
+
+        return result
 
     def apps(self, app_package):
         command = f'{self.adb_path} -s {self.device_id} shell monkey -p {app_package} -c android.intent.category.LAUNCHER 1'
@@ -106,7 +153,17 @@ class ADB:
             "swipe",
             str(x1), str(y1), str(x2), str(y2), str(duration_ms)
         ]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=ADB_COMMAND_TIMEOUT_SEC
+            )
+        except subprocess.TimeoutExpired:
+            print(f"adb{self.itr} drag timeout")
+            return
         if result.returncode != 0:
             print("Drag failed:", result.stderr)
         else:
@@ -214,29 +271,31 @@ class ADB:
 
 
 
-    def has_keywords(self, processed_result, keywords, min_count=1):
-        """
-        Checks if at least `min_count` of the given `keywords` are present (as substrings)
-        in the first element of each sublist in `processed_result`.
+    def extract_ocr_texts(self, processed_result):
+        texts = []
+        for item in processed_result:
+            if isinstance(item, str):
+                text = item
+            elif isinstance(item, (list, tuple)) and len(item) > 0:
+                text = str(item[0])
+            elif isinstance(item, dict):
+                text = str(item.get("text", ""))
+            else:
+                text = str(item)
+            texts.append(text)
+        return texts
 
-        Args:
-            processed_result (list): The OCR result list.
-            keywords (list or str): Keywords to check for.
-            min_count (int): Minimum number of keywords that must be found.
 
-        Returns:
-            bool: True if at least `min_count` keywords are found, False otherwise.
-        """
-        # Ensure keywords is a list
+    def find_keywords(self, processed_result, keywords):
         if isinstance(keywords, str):
             keywords = [keywords]
-        found = set()
-        for keyword in keywords:
-            for item in processed_result:
-                if keyword in str(item[0]):
-                    found.add(keyword)
-                    break  # No need to count the same keyword more than once
-        return len(found) >= min_count
+        ocr_texts_lower = [text.lower() for text in self.extract_ocr_texts(processed_result)]
+        return [word for word in keywords if any(str(word).lower() in text for text in ocr_texts_lower)]
+
+
+    def has_keywords(self, processed_result, keywords, min_count=1):
+        found_words = self.find_keywords(processed_result, keywords)
+        return len(found_words) >= min_count
 
 
 
@@ -397,7 +456,7 @@ class ADB:
         # ==============for state2 ==============
 
         self.tap(250,200) # 야외 클릭
-        time.sleep(0.5 * self.time)
+        time.sleep(1 * self.time)
 
         self.screen_shot(name="_state_check2")
 
@@ -1236,6 +1295,61 @@ class ADB:
         return bread_value, wood_value, stone_value, iron_value
 
 
+    def hunting2(self, level=2) :
+
+        self.tap(35,660) # 서치버튼
+
+        time.sleep(1*self.time)
+
+        self.drag_with_adb(30, 685, 510, 685, duration_ms=1000)
+        time.sleep(1*self.time)
+
+        self.tap(190,675) # 괴수
+        time.sleep(1*self.time)
+
+
+        for _ in range(level+1):
+            self.tap(50,790) # 한단계 낮추기
+            time.sleep(1*self.time)
+        for _ in range(level-1):
+            self.tap(365,790) # 한단계 높이기
+            time.sleep(1*self.time)
+
+        self.tap(270,910) # 검색
+        time.sleep(5*self.time)
+
+        self.tap(270,365) # 집결
+        time.sleep(1*self.time)
+
+        self.tap(270,620) # 집결 시작
+        time.sleep(1*self.time)
+
+        self.screen_shot(name="_allocation")
+        result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
+
+
+        flag = 0
+        for item in processed_result:
+            if "균등" in item[0] or "배치" in item[0] :
+                self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
+                time.sleep(1*self.time)
+                self.tap(410,910) # 출정
+                time.sleep(2*self.time)
+                return True
+            if "비례" in item[0] :
+                flag = 1
+
+        if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
+            self.tap(220,890) # 균등배치
+        elif flag == 1 : # 비례라는 단어가 탐지된 경우
+            self.tap(150,890) # 균등배치
+        time.sleep(1*self.time)
+        self.tap(410,910) # 출정
+        time.sleep(2*self.time)
+
+
+
     def hunting(self) :
 
         # 한단계 높여서 안됐을 시 코드 추가필요
@@ -1316,6 +1430,10 @@ class ADB:
 
         self.tap(365,790) # 한단계 높이기
         time.sleep(1)
+        self.tap(365,790) # 한단계 높이기
+        time.sleep(1)
+        self.tap(365,790) # 한단계 높이기
+        time.sleep(1)
         self.tap(270,910) # 검색
         time.sleep(10)
 
@@ -1385,7 +1503,9 @@ class ADB:
 
         self.tap(10,415)
         time.sleep(1)
-        self.drag_with_adb(170, 625, 170, 275, duration_ms=500)
+        self.drag_with_adb(170, 525, 170, 275, duration_ms=500) # 625 -> 525
+        time.sleep(0.5)
+        self.drag_with_adb(170, 525, 170, 275, duration_ms=500) # 625 -> 525
         time.sleep(0.5)
         self.screen_shot(name="_hero")
 
@@ -1434,11 +1554,39 @@ class ADB:
         self.tap(355,415) # 영웅 창 닫기
 
 
+    def heal(self) :
+
+        self.tap(420,790) # 힐 버튼 클릭
+        time.sleep(1)
+
+        self.screen_shot(name="_heal")
+
+        result = self.get_ocr_raw(file_name="capture_heal.png", x_min=365, x_max=415, y_min=670, y_max=705, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=365, x_max=415, y_min=670, y_max=705, y_threshold=10, scale=3, merge=True)
+
+        has_heal = any("치료" in str(item[0]) for item in processed_result)
+        
+        if has_heal == True :
+            self.tap(390,700)
+            time.sleep(1)
+            self.tap(390,700)
+            time.sleep(1)
+            self.back()
+
+
+
+
+
+
+
+
     def get_supply(self) :
 
         self.tap(10,415)
         time.sleep(1)
-        self.drag_with_adb(170, 625, 170, 275, duration_ms=800)
+        self.drag_with_adb(170, 625, 170, 275, duration_ms=500) # 625 -> 525
+        time.sleep(0.5)
+        self.drag_with_adb(170, 625, 170, 275, duration_ms=500) # 625 -> 525
         time.sleep(0.5)
         self.screen_shot(name="_supply")
 
@@ -1453,7 +1601,7 @@ class ADB:
             curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
             next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
 
-            if "창고보급" in curr_text and "완료" in next_text:
+            if ("창고" in curr_text or "보급" in curr_text) and "완료" in next_text:
                 curr_val = float(processed_result[i][2])      # y좌표
                 print(curr_val)
                 next_val = float(processed_result[i + 1][2])  # y좌표
@@ -1465,12 +1613,78 @@ class ADB:
                 self.tap(275,345) # 수령 버튼
                 time.sleep(10)
                 self.tap(270,420)
-                print(f"adb{self.itr} 보급품 수령 완료료")
+                print(f"adb{self.itr} 보급품 수령 완료")
                 break
 
 
         time.sleep(1)
         self.tap(355,415) # 영웅 창 닫기
+        time.sleep(1)
+
+        self.tap(275,345) # 고기
+        time.sleep(1)
+        self.tap(270,715)
+        time.sleep(3)
+
+
+        # self.tap(190,110) # 치료소 클릭
+        # time.sleep(3)
+        # self.tap(390,55) # 치료
+        # time.sleep(1)
+        # self.tap(435,900) # 치료
+        # time.sleep(1)
+        # self.tap(370,325) # 도움 요청
+
+
+
+
+
+    def union_reward(self) :
+
+        self.tap(400, 920) # 연맹 버튼 누르기
+        time.sleep(3)
+        self.tap(430, 500) # 연맹 보물 상자
+        time.sleep(1)
+        self.tap(160, 305) # 전리품 보물상자
+        time.sleep(1)
+        self.tap(270, 905) # 일괄 수령
+        time.sleep(3)
+        self.tap(270, 905) # 일괄 수령
+        time.sleep(1)
+        self.tap(405, 305) # 연맹원 선물
+        time.sleep(1)
+        self.tap(455, 480) # 연맹원 선물
+        time.sleep(1)
+        self.tap(455, 480) # 연맹원 선물
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+
+
+
+
+    def union_hunt(self) :
+
+        self.tap(400, 920) # 연맹 버튼 누르기
+        time.sleep(3)
+        self.tap(150,500) # 연맹 전쟁
+        time.sleep(1)
+        self.tap(100,900) # 집결결
+        time.sleep(1)
+        self.tap(270,920) # 자동 참여
+        time.sleep(2)
+        self.tap(360,745) # 켜기
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+
+
 
 
     def union_research(self) :
@@ -1500,7 +1714,7 @@ class ADB:
                 self.tap(400, 920) # 연맹 버튼 누르기
                 time.sleep(3)
                 self.tap(420, 700) # 연맹 과학 기술 버튼 누르기
-                time.sleep(1)
+                time.sleep(0.5)
                 break
             else :
                 pass
@@ -1541,8 +1755,9 @@ class ADB:
                         if "기부" in str(item[0]):
                             x = item[1]
                             y = item[2]
-                            self.tap(385,765) # 기부 버튼
-                            time.sleep(1)
+                            for _ in range(5):
+                                self.tap(385,765) # 기부 버튼
+                                time.sleep(1)
                             self.back()
                             time.sleep(1)
                             self.back()
@@ -1621,6 +1836,40 @@ class ADB:
         self.back()
 
 
+    def read_all_letter(self) :
+
+        self.tap(500,785)
+        time.sleep(1)
+
+        self.tap(170,80) # 연맹맹
+        time.sleep(1)
+        self.tap(420,930) # 일괄 읽기
+        time.sleep(2)
+        self.tap(270,80) # 시스템
+        time.sleep(1)
+
+        self.tap(270,80) # 시스템
+        time.sleep(1)
+        self.tap(420,930) # 일괄 읽기
+        time.sleep(2)
+        self.tap(270,80) # 시스템
+        time.sleep(1)
+
+        self.tap(375,80) # 보고
+        time.sleep(1)
+        self.tap(420,930) # 일괄 읽기
+        time.sleep(2)
+        self.tap(270,80) # 시스템
+        time.sleep(1)
+
+        self.back()
+        time.sleep(1)
+
+ 
+
+
+
+
     def get_VIP(self) :
 
         self.tap(490,60)
@@ -1628,11 +1877,134 @@ class ADB:
         self.tap(470,215)
         time.sleep(2)
         self.back()
+        time.sleep(1)
+
+
+
+    def hunt_event(self) :
+
+        self.tap(500, 710)
+        time.sleep(1)
+
+        self.tap(270,860) # 일괄 수령
         time.sleep(2)
-        self.back()
+        self.tap(270,860)
+        time.sleep(1)
+
+
+        self.screen_shot(name="_hunt_event")
+
+        img_path = f"{self.base}\\{self._f('capture_hunt_event.png')}"
+        img = cv2.imread(img_path)
+        img_g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img_e = cv2.Canny(img_g, 80, 160)
+
+        template_dir = os.path.join(os.getcwd(), "template")
+        template_files = ["template1.png", "template2.png", "template3.png", "template4.png"]  # 비교할 템플릿들
+        threshold = 0.55
+
+        detections = []  # (template_name, cx, cy, score)
+
+        for name in template_files:
+            tpl_path = os.path.join(template_dir, name)
+            tpl = cv2.imread(tpl_path)
+            if tpl is None:
+                print(f"[WARN] 템플릿 로드 실패: {tpl_path}")
+                continue
+
+            tpl_g = cv2.cvtColor(tpl, cv2.COLOR_BGR2GRAY)
+            tpl_e = cv2.Canny(tpl_g, 80, 160)
+
+            res = cv2.matchTemplate(img_e, tpl_e, cv2.TM_CCOEFF_NORMED)
+            ys, xs = np.where(res >= threshold)
+
+            w, h = tpl.shape[1], tpl.shape[0]
+            for x, y in zip(xs, ys):
+                cx = x + w // 2
+                cy = y + h // 2
+                score = float(res[y, x])
+                detections.append((name, cx, cy, score))
+
+        # 점수 높은 순으로 보기
+        detections.sort(key=lambda x: x[3], reverse=True)
+
+        # 아무것도 없을 경우
+        if detections == [] : 
+            self.back()
+            time.sleep(1)
+            return False
+        # 뭔가 감지 된 경우
+        else :
+            self.tap(detections[0][1], detections[0][2])
+            time.sleep(1)
+            self.tap(270,680) # 보기
+            time.sleep(1)
+            self.tap(270,470)
+            time.sleep(1)
+
+            # 현재 상태 체크 (사냥이 아니라 보상 체크일수도 있음)
+            self.screen_shot(name="_hunt_state_check")
+
+            result = self.get_ocr_raw_advanced(file_name="capture_hunt_state_check.png", x_min=65, x_max=145, y_min=5, y_max=45, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+            processed_result = self.process_ocr(result=result, x_min=65, x_max=145, y_min=5, y_max=45, y_threshold=10, scale=3, merge=True)
+
+            # 사냥 아닌 경우
+            if any("이벤" in str(row[0]) or "벤트" in str(row[0]) for row in processed_result):
+                self.back()
+                time.sleep(1)
+                return False
+
+            # 주점토벌로 넘어간 경우
+            result = self.get_ocr_raw_advanced(file_name="capture_hunt_state_check.png", x_min=360, x_max=440, y_min=885, y_max=925, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+            processed_result = self.process_ocr(result=result, x_min=360, x_max=440, y_min=885, y_max=925, y_threshold=10, scale=3, merge=True)
+
+            # 주점 토벌인 경우
+            if any("전투" in str(row[0]) for row in processed_result):
+                self.tap(400,900)
+                time.sleep(30)
+                self.tap(400,900)
+                time.sleep(1)
+                return True
 
 
 
+            # 행군 칸이 있는지 체크
+            self.screen_shot(name="_queue_check")
+
+            result = self.get_ocr_raw_advanced(file_name="capture_queue_check.png", x_min=210, x_max=330, y_min=235, y_max=275, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
+            processed_result = self.process_ocr(result=result, x_min=210, x_max=330, y_min=235, y_max=275, y_threshold=10, scale=3, merge=True)
+
+            # 부대 행군 잔여 칸이 없는 경우
+            if any("행군" in str(row[0]) for row in processed_result):
+                self.back()
+                time.sleep(1)
+                return False
+            # 이상 없는 경우
+            else :
+                self.screen_shot(name="_allocation")
+                result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
+                processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
+
+
+                flag = 0
+                for item in processed_result:
+                    if "균등" in item[0] or "배치" in item[0] :
+                        self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
+                        time.sleep(1*self.time)
+                        self.tap(410,910) # 출정
+                        time.sleep(2*self.time)
+                        return True
+                    if "비례" in item[0] :
+                        flag = 1
+
+                if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
+                    self.tap(220,890) # 균등배치
+                elif flag == 1 : # 비례라는 단어가 탐지된 경우
+                    self.tap(150,890) # 균등배치
+                time.sleep(1)
+                self.tap(410,910) # 출정
+                time.sleep(2)
+                return True
 
 
 
@@ -1690,25 +2062,37 @@ class ADB:
         mse = np.mean((crop.astype(float) - ref.astype(float)) ** 2)
         return mse <= mse_threshold
 
-    def check_reconnect(self, mse_threshold=800) :
+    def check_reconnect(self, mse_threshold=800, min_interval_sec=8.0, force=False) :
+        now = time.time()
+        if (not force) and (now - self._last_reconnect_check_ts < min_interval_sec):
+            return self._last_reconnect_check_result
 
         self.screen_shot(name="_reconnect")
         self.crop_image(file_name="capture_reconnect.png", x_min=50, x_max=490, y_min=320, y_max=630)
-        return self.matches_reference(
+        result = self.matches_reference(
             cropped_file_name="cropped_capture_reconnect.png",
             reference_name="reconnect.png",
             mse_threshold=mse_threshold
         )
+        self._last_reconnect_check_ts = now
+        self._last_reconnect_check_result = result
+        return result
 
-    def check_help(self, mse_threshold=800) :
+    def check_help(self, mse_threshold=800, min_interval_sec=2.5, force=False) :
+        now = time.time()
+        if (not force) and (now - self._last_help_check_ts < min_interval_sec):
+            return self._last_help_check_result
 
         self.screen_shot(name="_help")
         self.crop_image(file_name="capture_help.png", x_min=375, x_max=430, y_min=825, y_max=875)
-        return self.matches_reference(
+        result = self.matches_reference(
             cropped_file_name="cropped_capture_help.png",
             reference_name="help.png",
             mse_threshold=mse_threshold
         )
+        self._last_help_check_ts = now
+        self._last_help_check_result = result
+        return result
 
 
 
@@ -1722,7 +2106,7 @@ class ADB:
         cropped_image = image[y_min:y_max, x_min:x_max]
         cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
         cv2.imwrite(cropped_img_path, cropped_image)
-        result = self.ocr.ocr(cropped_img_path, cls=False)
+        result = self._run_ocr(cropped_img_path)
 
         # print(result)
 
@@ -1783,7 +2167,7 @@ class ADB:
             cropped_image = cv2.cvtColor(cv2.equalizeHist(gray), cv2.COLOR_GRAY2BGR)
         cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
         cv2.imwrite(cropped_img_path, cropped_image)
-        result = self.ocr.ocr(cropped_img_path, cls=False)
+        result = self._run_ocr(cropped_img_path)
 
         return result
 
@@ -1844,7 +2228,7 @@ class ADB:
 
         cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
         cv2.imwrite(cropped_img_path, cropped_image)
-        result = self.ocr.ocr(cropped_img_path, cls=False)
+        result = self._run_ocr(cropped_img_path)
 
         return result
     
@@ -1944,23 +2328,20 @@ class ADB:
 
 
 
-    def check_abnormal(self) :
-
-        itr = 0
-
-        while True :
-
-            # 비정상 화면 해결
+    def check_abnormal(self, max_actions=8) :
+        """무한 복구 루프를 막기 위해 최대 반복 횟수 제한."""
+        fixed = False
+        for _ in range(max_actions):
             state = self.get_state()
-            if state["action"] == False :
-                itr = itr + 1
-                break
-            time.sleep(1)
+            if state["action"] == False:
+                return fixed
+            fixed = True
+            time.sleep(0.7 * self.time)
 
-        if itr == 0 : # abnormal 없음
-            return False
-        else : 
-            return True
+        # 반복 상한을 넘기면 강제로 한 번 빠져나와 다음 루프로 넘긴다.
+        self.back()
+        time.sleep(1 * self.time)
+        return True
 
 
         
@@ -1985,37 +2366,84 @@ def init_bluestacks_and_adbs():
     # BlueStacks 인스턴스 실행
     commands = [
         [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_1"],  # 5555
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_12"],
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_13"],
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_14"],
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_15"],
+        
+        # 
         # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_7"],
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_8"],
+        # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_8"],
         # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_9"],
         # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_10"],
         # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_11"],
     ]
 
+    command_group_a = [
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_12"],
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_13"],
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_14"],
+    ]
+    command_group_b = [
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_15"],
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_8"],
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_9"],
+    ]
+
+    toggle_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bluestacks_instance_toggle.txt")
+    use_group_a = True
+    toggle_file_existed = os.path.exists(toggle_path)
+    previous_toggle_value = ""
+    can_restore_previous_toggle = False
+
+    if toggle_file_existed:
+        try:
+            with open(toggle_path, "r", encoding="utf-8") as f:
+                last_group = f.read().strip()
+            previous_toggle_value = last_group
+            can_restore_previous_toggle = True
+            # 직전이 A면 이번엔 B, 직전이 B면 이번엔 A
+            use_group_a = (last_group != "A")
+        except Exception:
+            use_group_a = True
+
+    selected_commands = command_group_a if use_group_a else command_group_b
+    commands += selected_commands
+
+    try:
+        with open(toggle_path, "w", encoding="utf-8") as f:
+            f.write("A" if use_group_a else "B")
+    except Exception as e:
+        print(f"[경고] 인스턴스 토글 저장 실패: {e}")
+
     processes = []
+    adb_ports = []
+    instance_port_map = {
+        "Pie64_1": 5555,
+        "Pie64_12": 5675,
+        "Pie64_13": 5685,
+        "Pie64_14": 5695,
+        "Pie64_15": 5705,
+        "Pie64_8": 5635,
+        "Pie64_9": 5645,
+        # "Pie64_10": 5655,
+    }
+
     for cmd in commands:
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         processes.append(process)
-        time.sleep(3)  # 명령 실행 간 지연 시간 추가
+        # cmd 형식: [exe_path, "--instance", "Pie64_x"]
+        instance_name = cmd[2] if len(cmd) > 2 else None
+        port = instance_port_map.get(instance_name)
+        if port is not None:
+            adb_ports.append(port)
+        time.sleep(2)  # 명령 실행 간 지연 시간 추가
 
-    time.sleep(10)
+
+    time.sleep(3)
+
 
     # ADB 연결 및 kingshot 실행
     adbs = []
-    adbs.append(ADB(port=5555))
-    adbs.append(ADB(port=5675))
-    adbs.append(ADB(port=5685))
-    adbs.append(ADB(port=5695))
-    adbs.append(ADB(port=5705))
-    # adbs.append(ADB(port=5625))
-    adbs.append(ADB(port=5635))
-    # adbs.append(ADB(port=5645))
-    # adbs.append(ADB(port=5655))
-    # adbs.append(ADB(port=5665))
+    for port in adb_ports:
+        adbs.append(ADB(port=port))
+
 
     for adb in adbs:
         adb.connect()
@@ -2036,48 +2464,71 @@ def init_bluestacks_and_adbs():
     # 어플리케이션 정상 실행 여부 판단
     for iteration, adb in enumerate(adbs):
         adb.screen_shot(name="_initialize")
-        result = adb.get_ocr_raw(file_name="capture_initialize.png", x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1)
-        processed_result = adb.process_ocr(result=result, x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1, merge=False)
-        result = adb.has_keywords(processed_result, ["Store", "store", "시스템"], min_count=2)
+        ocr_result = adb.get_ocr_raw(file_name="capture_initialize.png", x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1)
+        processed_result = adb.process_ocr(result=ocr_result, x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1, merge=False)
+        keywords = ["store", "studio", "캐주얼"]
+        found_words = adb.find_keywords(processed_result, keywords)
+        # result와 found_words가 같은 기준을 쓰도록 동기화
+        result = len(found_words) >= 1
 
-        if processed_result == [] :
+        if processed_result == []:
             result = True
+            found_words = "NULL"
 
         if result:
-            print(f"adb{iteration}에서 실행 실패 감지")
+            print(f"adb{iteration}에서 실행 실패 감지 | 감지된 단어: {found_words}")
             success = False
+        else:
+            print(f"adb{iteration} | 감지된 단어: {found_words}")
         time.sleep(1)
 
     # 실행 실패 시 BlueStacks 프로세스 종료 (Popen + taskkill로 실제 엔진까지 확실히 종료)
     if not success:
-        print("실행 실패: BlueStacks 프로세스 종료 중...")
-        # 1) Popen으로 띄운 프로세스 종료 시도
-        for process in processes:
-            try:
-                process.terminate()
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
-            except Exception as e:
-                print(f"Popen 프로세스 종료 중 오류: {e}")
-        # 2) Windows taskkill로 BlueStacks 관련 프로세스 강제 종료 (런처가 남긴 실제 엔진까지 처리)
-        bluestacks_process_names = ["HD-Player.exe", "HD-Adb.exe", "BstkDrv.exe"]
-        for proc_name in bluestacks_process_names:
-            try:
-                subprocess.run(
-                    ["taskkill", "/F", "/IM", proc_name],
-                    capture_output=True,
-                    timeout=10,
-                )
-            except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-                pass
-        time.sleep(1)
+        shutdown_bluestacks_processes(processes, reason="실행 실패")
+        # 실패하면 토글 상태를 실행 전 상태로 원복
+        try:
+            if toggle_file_existed:
+                if can_restore_previous_toggle:
+                    with open(toggle_path, "w", encoding="utf-8") as f:
+                        f.write(previous_toggle_value)
+                elif os.path.exists(toggle_path):
+                    os.remove(toggle_path)
+            elif os.path.exists(toggle_path):
+                os.remove(toggle_path)
+        except Exception as e:
+            print(f"[경고] 인스턴스 토글 원복 실패: {e}")
 
-    return adbs, success
+    return adbs, success, processes
+
+
+def shutdown_bluestacks_processes(processes, reason="요청됨"):
+    print(f"{reason}: BlueStacks 프로세스 종료 중...")
+    # 1) Popen으로 띄운 프로세스 종료 시도
+    for process in processes:
+        try:
+            process.terminate()
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=2)
+        except Exception as e:
+            print(f"Popen 프로세스 종료 중 오류: {e}")
+
+    # 2) Windows taskkill로 BlueStacks 관련 프로세스 강제 종료 (런처가 남긴 실제 엔진까지 처리)
+    bluestacks_process_names = ["HD-Player.exe", "HD-Adb.exe", "BstkDrv.exe"]
+    for proc_name in bluestacks_process_names:
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/IM", proc_name],
+                capture_output=True,
+                timeout=10,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            pass
+    time.sleep(1)
 
 # 초기화 실행: 실패 시 전체 파이썬 프로세스 종료
-adbs, _init_success = init_bluestacks_and_adbs()
+adbs, _init_success, bluestacks_processes = init_bluestacks_and_adbs()
 if not _init_success:
     import sys
     sys.exit(1)
@@ -2095,6 +2546,7 @@ back_trigger = False
 
 # 각 adb별로 루프 카운트 (adb마다 5번 돌면 자원 채취)
 loop_count = {}
+shutdown_event = threading.Event()
 
 
 def check_exception_case(adb) :
@@ -2131,21 +2583,33 @@ def reconnection(adb) :
 
 
 def check_abnormal(adb) :
+    # 너무 잦은 OCR 상태체크를 줄여 전체 부하를 낮춘다.
+    now = time.time()
+    last_ts = getattr(adb, "_last_abnormal_check_ts", 0.0)
+    if now - last_ts < 1.5:
+        return getattr(adb, "_last_abnormal_check_result", False)
 
     rc = reconnection(adb)
 
-    while True :
-
-        # 비정상 화면 해결
+    fixed = False
+    for _ in range(8):
         state = adb.get_state()
-        if state["action"] == False :
-            break
-        time.sleep(1)
+        if state["action"] == False:
+            result = (rc or fixed)
+            adb._last_abnormal_check_ts = time.time()
+            adb._last_abnormal_check_result = result
+            return result
+        fixed = True
+        time.sleep(0.7)
 
+    # 비정상 상태가 계속되면 강제로 한 번 뒤로가기 후 다음 루프로 복구 시도
+    adb.back()
+    time.sleep(1)
+    adb._last_abnormal_check_ts = time.time()
+    adb._last_abnormal_check_result = True
+    
     if rc == True :
-        return True
-    else :
-        return False
+        return 5
 
 
 
@@ -2156,6 +2620,8 @@ def run_one_adb(itr, adb):
     """한 디바이스에 대한 작업 (병렬 실행용). 에러 시 로그만 하고 넘어감."""
     try:
         print(f"adb{itr} 시작")
+        run_started_at = time.time()
+        timeout_seconds = 10 * 60
 
         adb.itr = itr
         switching = 0
@@ -2164,37 +2630,110 @@ def run_one_adb(itr, adb):
 
         # 튕겼는지 체크
 
-        adb.screen_shot(name="_initialize")
-        result = adb.get_ocr_raw(file_name="capture_initialize.png", x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1)
-        processed_result = adb.process_ocr(result=result, x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1, merge=False)
-        result = adb.has_keywords(processed_result, ["Store", "store", "시스템"], min_count=2)
+        # adb.screen_shot(name="_initialize")
+        # result = adb.get_ocr_raw(file_name="capture_initialize.png", x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1)
+        # processed_result = adb.process_ocr(result=result, x_min=0, x_max=540, y_min=0, y_max=960, y_threshold=10, scale=1, merge=False)
+        # # 아무 글자도 인식 안되는 경우 포함
+        # if not processed_result or len(processed_result) == 0 or (len(processed_result) == 1 and not processed_result[0][0].strip()):
+        #     result = True
+        # else:
+        #     result = adb.has_keywords(processed_result, ["Store", "store", "시스템"], min_count=2)
 
-        if result :
-            adb.start_kingshot()
-            time.sleep(5)
+        # if result :
+        #     adb.start_kingshot()
+        #     time.sleep(5)
 
         check_abnormal(adb)
 
         check_exception_case(adb)
 
-        if loop_count.get(itr, 0) == 0 :
-            
-            adb.get_people()
-            time.sleep(1)
+        # if loop_count.get(itr, 0) == 0 :
+        
 
-            check_abnormal(adb)
-            adb.get_VIP()
-            time.sleep(1)
-
-            check_abnormal(adb)
-            adb.get_money()
-            time.sleep(1)
+        
+        itrr = 0
 
         
         while True :
+            if shutdown_event.is_set():
+                return
+
+            if time.time() - run_started_at >= timeout_seconds:
+                print(f"adb{itr} 10분 경과: BlueStacks 종료 트리거")
+                shutdown_event.set()
+                shutdown_bluestacks_processes(bluestacks_processes, reason=f"adb{itr} 15분 타임아웃")
+                return
+
+            if switching <= 2 and itrr == 0 :
+            
+                adb.get_people()
+                time.sleep(1)
+
+                check_abnormal(adb)
+                if adb.check_help() == True :
+                    adb.tap(400,820) # 연맹 도움
+                    time.sleep(1)
+
+                # 이 작업은 오전 8시 ~ 오전 10시 사이에만 수행
+                current_hour = datetime.now().hour
+                if 8 <= current_hour <= 10:
+                    check_abnormal(adb)
+                    adb.get_VIP()
+                    time.sleep(1)
+
+                # 4의 배수 시간마다 실행
+                now_hour = datetime.now().hour
+                if now_hour % 4 == 0:
+                    check_abnormal(adb)
+                    adb.get_money()
+                    time.sleep(1)
+
+                    check_abnormal(adb)
+                    adb.union_hunt()
+                    time.sleep(1)
+
+                    check_abnormal(adb)
+                    adb.read_all_letter()
+                    time.sleep(1)
+
+                    check_abnormal(adb)
+                    adb.union_reward()
+                    time.sleep(1)
+
+                    check_abnormal(adb)
+                    adb.get_quest()
+                    time.sleep(1)
+
+
+                check_abnormal(adb)
+                if adb.check_help() == True :
+                    adb.tap(400,820) # 연맹 도움
+                    time.sleep(1)
+
+                
+                check_abnormal(adb)
+                adb.get_supply()
+                time.sleep(1)
+
+                check_abnormal(adb)
+                adb.union_research()
+                time.sleep(1)
+
+                check_abnormal(adb)
+                adb.get_hero()
+                time.sleep(1)
+
+                
+
+                itrr = 1
+
+
+            loop_start = time.time()
+            stamina = 0
 
             # 현재 위치 판단 (예외처리)
-            if check_abnormal(adb) :
+            if check_abnormal(adb) == 5 :
+                time.sleep(0.5)
                 continue
 
             adb.screen_shot(name="_inout")
@@ -2212,9 +2751,13 @@ def run_one_adb(itr, adb):
             state = adb.state_check()
             [build1, build2, unit1, unit2, unit3, research] = [3, 3, 3, 3, 3, 3]
             queue_check = False
+            zero_count = 0
             if state is not False :
                 [build1, build2, unit1, unit2, unit3, research] = state[0]
-                queue_check = any(str(x) == "0" for x in state[1])
+                zero_count = sum(str(x) == "0" for x in state[1])
+                queue_check = zero_count > 0
+                
+                # queue_check = sum(str(x) == "0" for x in state[1]) >= 2
                 print(f"adb{itr} : {state[0]}")
                 print(f"adb{itr} : {state[1]}")
                 print(f"adb{itr} : {queue_check}")
@@ -2223,7 +2766,8 @@ def run_one_adb(itr, adb):
                     stamina = adb.get_stamina()
 
 
-            if check_abnormal(adb) :
+            if check_abnormal(adb) == 5 :
+                time.sleep(0.5)
                 continue
 
 
@@ -2237,7 +2781,8 @@ def run_one_adb(itr, adb):
                 adb.get_unit(type="궁병")
                 time.sleep(1)
 
-            if check_abnormal(adb) :
+            if check_abnormal(adb) == 5 :
+                time.sleep(0.5)
                 continue
 
             if adb.check_help() == True :
@@ -2253,7 +2798,8 @@ def run_one_adb(itr, adb):
                 print("건물 2 건설 시작")
 
             if unit1 in (1, 2) or unit2 in (1, 2) or unit3 in (1, 2):
-                if check_abnormal(adb) :
+                if check_abnormal(adb) == 5 :
+                    time.sleep(0.5)
                     continue
                 if adb.check_help() == True :
                     adb.tap(400,820) # 연맹 도움
@@ -2269,7 +2815,8 @@ def run_one_adb(itr, adb):
                     adb.unit_training(unit="궁병")
                     time.sleep(1)
 
-            if check_abnormal(adb) :
+            if check_abnormal(adb) == 5 :
+                time.sleep(0.5)
                 continue
             if adb.check_help() == True :
                 adb.tap(400,820) # 연맹 도움
@@ -2279,18 +2826,22 @@ def run_one_adb(itr, adb):
                 adb.research()
                 time.sleep(1)
 
-            if check_abnormal(adb) :
+            if check_abnormal(adb) == 5 :
+                time.sleep(0.5)
                 continue
             if adb.check_help() == True :
                 adb.tap(400,820) # 연맹 도움
                 time.sleep(1)
 
-            adb.union_research()
-            time.sleep(1)
+
+            if itrr % 10 == 0 :
+                adb.union_research()
+                time.sleep(1)
 
             # 자원 채취
-            if queue_check == True :
-                if check_abnormal(adb) :
+            if queue_check == True and ((stamina > 60 or zero_count == 1) or (zero_count > 1)):
+                if check_abnormal(adb) == 5 :
+                    time.sleep(0.5)
                     continue
                 if adb.check_help() == True :
                     adb.tap(400,820) # 연맹 도움
@@ -2305,9 +2856,17 @@ def run_one_adb(itr, adb):
                     adb.tap(490,910) # 야외로 나가기
                     time.sleep(5)
 
-                    if stamina > 50 : # 사냥
-                        adb.hunting()
-                    else : # 자원 채취
+                    adb.heal()
+
+
+                    if adb.hunt_event() :
+                        continue
+                    elif stamina > 60 and zero_count == 1 : # 사냥
+                        if adb.port not in (5555, 5556):
+                            adb.hunting2(level=2)
+                        else :
+                            adb.hunting2(level=3)
+                    elif zero_count > 1 : # 자원 채취
                         bread_value, wood_value, stone_value, iron_value = adb.resource_remain()
                         print(f"adb{itr} : {bread_value/1e+6}, {wood_value/1e+6}, {stone_value/1e+6}, {iron_value/1e+6}")
                         stone_value = stone_value * 5
@@ -2370,45 +2929,14 @@ def run_one_adb(itr, adb):
 
                     time.sleep(5)
 
-                    if check_abnormal(adb) :
-                        continue
-                    time.sleep(1)
-
-                    adb.read_letter()
-                    time.sleep(1)
-
-                    if check_abnormal(adb) :
-                        continue
-                    time.sleep(1)
-
-                    adb.get_quest()
-                    time.sleep(1)
 
         
 
 
-            if loop_count.get(itr, 0) % 3 == 0 and switching % 6 <= 1:
+            if adb.port in [5555, 5556, 5675, 5685, 5695, 5705] and itrr % 5 == 0:
 
-                print(f"adb{itr} loop 30 진입")
-
-                if check_abnormal(adb) :
-                    continue
-
-                check_exception_case(adb)
-
-                adb.get_hero()
-                time.sleep(1)
-
-                if check_abnormal(adb) :
-                    continue
-
-                adb.get_supply()
-                time.sleep(1)
-
-
-            if adb.port == 5555 and  loop_count.get(itr, 0) % 5 == 0 :
-
-                if check_abnormal(adb) :
+                if check_abnormal(adb) == 5 :
+                    time.sleep(0.5)
                     continue
                 adb.tap(35,35) # 초상화 클릭
                 time.sleep(1)
@@ -2417,7 +2945,9 @@ def run_one_adb(itr, adb):
                 result = adb.get_ocr_raw(file_name="capture_ID.png", x_min=210, x_max=440, y_min=660, y_max=700, y_threshold=10, scale=3)
                 processed_result = adb.process_ocr(result=result, x_min=210, x_max=440, y_min=660, y_max=700, y_threshold=10, scale=3, merge=True)
 
-                if any(s in processed_result[0][0] for s in ("fa", "ar", "rm")):
+                if adb.port in [] :
+                    farm = True
+                elif any(s in processed_result[0][0] for s in ("fa", "ar", "rm")):
                     farm = True
                 else :
                     farm = False
@@ -2433,40 +2963,47 @@ def run_one_adb(itr, adb):
                     adb.tap(270,520)
 
                 time.sleep(1)
-                adb.tap(385,600) # 확인
+                if adb.port not in [] :
+                    adb.tap(385,600) # 확인
                 time.sleep(10)
 
                 if switching == 0 :
                     adb.itr = 0
                 switching += 1
+                itrr = 0
+            else :
+                # 이 adb의 루프 카운트 +1 (각자 따로 돔)
+                loop_count[itr] = loop_count.get(itr, 0) + 1
+                itrr += 1
+
+                # 루프 하단 최소 호흡 시간 (CPU 과점유 방지)
+                elapsed = time.time() - loop_start
+                if elapsed < 0.3:
+                    time.sleep(0.3 - elapsed)
+                time.sleep(5)
                 
+                    
 
 
-
-        
-
-
-
-
-
-            # 이 adb의 루프 카운트 +1 (각자 따로 돔)
-            loop_count[itr] = loop_count.get(itr, 0) + 1
+            
 
     except Exception as e:
         print(f"adb{itr} 오류: {e}")
         traceback.print_exc()
 
 
-import threading
-
 def adb_worker(itr, adb):
     """한 디바이스 전용 무한 루프. 다른 adb와 무관하게 독립 동작."""
     while True:
+        if shutdown_event.is_set():
+            break
         try:
             run_one_adb(itr, adb)
         except Exception as e:
             print(f"adb{itr} 루프 예외: {e}")
             traceback.print_exc()
+        if shutdown_event.is_set():
+            break
         time.sleep(1)
 
 threads = []
@@ -2479,3 +3016,8 @@ for itr, adb in enumerate(adbs):
 # 메인은 스레드들이 돌아가도록 대기만 함 (종료 시까지)
 for t in threads:
     t.join()
+
+if shutdown_event.is_set():
+    print("종료 이벤트 감지: 파이썬 프로세스를 종료합니다.")
+    import sys
+    sys.exit(1)
