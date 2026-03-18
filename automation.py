@@ -770,7 +770,7 @@ class ADB:
             time.sleep(1)
             self.drag_with_adb(270, 300, 270, 400, duration_ms=1000)
 
-        result = research_try(itr=8)
+        result = research_try(itr=10)
 
         if result == True :
             time.sleep(1)
@@ -1996,7 +1996,7 @@ class ADB:
         img_e = cv2.Canny(img_g, 80, 160)
 
         template_dir = os.path.join(os.getcwd(), "template")
-        template_files = ["template1.png", "template2.png", "template3.png", "template4.png", "template5.png"]  # 비교할 템플릿들
+        template_files = [f"template{i}.png" for i in range(1, 8+1)]  # template1.png부터 template5.png까지 일반화
         threshold = 0.55
 
         detections = []  # (template_name, cx, cy, score)
@@ -2937,7 +2937,7 @@ def run_one_adb(itr, adb):
                 adb.tap(400,820) # 연맹 도움
                 time.sleep(1)
 
-            if research == 1 :
+            if research == 1 and itrr % 3 == 0 :
                 adb.research()
                 time.sleep(1)
 
@@ -2987,6 +2987,8 @@ def run_one_adb(itr, adb):
                     time.sleep(5)
 
                     adb.heal()
+
+                    flag = False
 
                     if zero_count > 1 : # 자원 채취
                         bread_value, wood_value, stone_value, iron_value = adb.resource_remain()
@@ -3044,9 +3046,14 @@ def run_one_adb(itr, adb):
                             time.sleep(1)
 
                         result = adb.resource_farming(resource=resource)
-                    elif stamina > 15 and adb.hunt_event() == True :
-                        pass
-                    elif stamina > 60 and zero_count == 1 : # 사냥
+
+                    elif stamina > 15 : # 사냥 이벤트
+
+                        if adb.hunt_event() == False : # 사냥할거 없는우
+                            flag = True
+                    
+                    if stamina > 60 and zero_count == 1 and flag == True : # 사냥
+
                         if adb.port not in (5555, 5556):
                             adb.hunting2(level=2)
                         else :
