@@ -1,8 +1,10 @@
 # TODOLIST
 
-# 병영 업그레이드 필요할 경우 인식해서 병사생산 일시중지 기능 추가
-# 하위 업그레이드 충족 필요시 업그레이드 진행 기능
-# 연맹 도움 기능 자동화
+# 이벤트 대응
+# 맛있는 음식 수령
+# 현재 state json으로 저장 기능
+# 곰덫
+# 함수 정리
 
 import subprocess
 import time
@@ -298,6 +300,56 @@ class ADB:
     def has_keywords(self, processed_result, keywords, min_count=1):
         found_words = self.find_keywords(processed_result, keywords)
         return len(found_words) >= min_count
+    
+
+
+    def search_template(self, name="None", threshold=0.55) :
+
+        self.screen_shot(name=f"_{name}")
+
+        img_path = f"{self.base}\\{self._f(f'capture_{name}.png')}"
+        img = cv2.imread(img_path)
+        img_g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img_e = cv2.Canny(img_g, 80, 160)
+
+        template_dir = os.path.join(os.getcwd(), "template")
+        template_files = []
+        idx = 1
+        while True:
+            template_filename = f"template_{name}{idx}.png"
+            tpl_path = os.path.join(template_dir, template_filename)
+            if os.path.isfile(tpl_path):
+                template_files.append(template_filename)
+                idx += 1
+            else:
+                break
+
+        detections = []  # (template_name, cx, cy, score)
+
+        for name in template_files:
+            tpl_path = os.path.join(template_dir, name)
+            tpl = cv2.imread(tpl_path)
+            if tpl is None:
+                print(f"[WARN] 템플릿 로드 실패: {tpl_path}")
+                continue
+
+            tpl_g = cv2.cvtColor(tpl, cv2.COLOR_BGR2GRAY)
+            tpl_e = cv2.Canny(tpl_g, 80, 160)
+
+            res = cv2.matchTemplate(img_e, tpl_e, cv2.TM_CCOEFF_NORMED)
+            ys, xs = np.where(res >= threshold)
+
+            w, h = tpl.shape[1], tpl.shape[0]
+            for x, y in zip(xs, ys):
+                cx = x + w // 2
+                cy = y + h // 2
+                score = float(res[y, x])
+                detections.append((name, cx, cy, score))
+
+        # 점수 높은 순으로 보기
+        detections.sort(key=lambda x: x[3], reverse=True)
+
+        return detections
 
 
 
@@ -1996,7 +2048,7 @@ class ADB:
         img_e = cv2.Canny(img_g, 80, 160)
 
         template_dir = os.path.join(os.getcwd(), "template")
-        template_files = [f"template{i}.png" for i in range(1, 8+1)]  # template1.png부터 template5.png까지 일반화
+        template_files = [f"template{i}.png" for i in range(1, 9+1)]  # template1.png부터 template5.png까지 일반화
         threshold = 0.55
 
         detections = []  # (template_name, cx, cy, score)
@@ -2028,7 +2080,7 @@ class ADB:
         if detections == [] : 
             self.back()
             self.screen_shot()
-            report_dir = os.path.join(os.getcwd(), "report")
+            report_dir = os.path.join(os.getcwd(), "report") # debug용 report 생성
             os.makedirs(report_dir, exist_ok=True)
             src_path = f"{self.base}\\{self._f('capture.png')}"
             random_name = f"empty_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}.png"
@@ -2056,7 +2108,7 @@ class ADB:
             if any("이벤" in str(row[0]) or "벤트" in str(row[0]) for row in processed_result):
                 self.back()
                 time.sleep(1)
-                return True
+                return self.hunt_event()
 
             # 주점토벌로 넘어간 경우
             result = self.get_ocr_raw_advanced(file_name="capture_hunt_state_check.png", x_min=360, x_max=440, y_min=885, y_max=925, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
@@ -2065,10 +2117,10 @@ class ADB:
             # 주점 토벌인 경우
             if any("전투" in str(row[0]) for row in processed_result):
                 self.tap(400,900)
-                time.sleep(30)
+                time.sleep(25)
                 self.tap(400,900)
                 time.sleep(1)
-                return True
+                return self.hunt_event()
 
 
 
@@ -2715,6 +2767,12 @@ def check_abnormal(adb) :
     if rc == True :
         return 5
 
+    # kingshot 화면 탐지 (바탕화면 감지지)
+    result = adb.search_template(name="kingshot")
+    if result != [] :
+        return 10
+
+
 
 
 
@@ -2801,7 +2859,7 @@ def run_one_adb(itr, adb):
                     time.sleep(1)
 
                     check_abnormal(adb)
-                    adb.get_quest()
+                    adb.get_hero()
                     time.sleep(1)
 
 
@@ -2815,7 +2873,7 @@ def run_one_adb(itr, adb):
                 time.sleep(1)
 
                 check_abnormal(adb)
-                adb.get_supply()
+                adb.get_quest()
                 time.sleep(1)
 
                 check_abnormal(adb)
@@ -2823,10 +2881,8 @@ def run_one_adb(itr, adb):
                 time.sleep(1)
 
                 check_abnormal(adb)
-                adb.get_hero()
+                adb.get_supply()
                 time.sleep(1)
-
-                
 
                 itrr = 1
 
@@ -3049,7 +3105,7 @@ def run_one_adb(itr, adb):
 
                     elif stamina > 15 : # 사냥 이벤트
 
-                        if adb.hunt_event() == False : # 사냥할거 없는우
+                        if adb.hunt_event() == False : # 사냥할거 없는경우
                             flag = True
                     
                     if stamina > 60 and zero_count == 1 and flag == True : # 사냥
