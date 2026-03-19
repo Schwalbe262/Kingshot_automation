@@ -2770,6 +2770,9 @@ def check_abnormal(adb) :
     # kingshot 화면 탐지 (바탕화면 감지지)
     result = adb.search_template(name="kingshot")
     if result != [] :
+        print(f"adb{getattr(adb, 'itr', '?')} kingshot 화면 감지: BlueStacks 종료 트리거")
+        shutdown_event.set()
+        shutdown_bluestacks_processes(bluestacks_processes, reason="kingshot 화면 감지(비정상 동작)")
         return 10
 
 
@@ -2891,7 +2894,7 @@ def run_one_adb(itr, adb):
             stamina = 0
 
             # 현재 위치 판단 (예외처리)
-            if check_abnormal(adb) == 5 :
+            if check_abnormal(adb) in (5, 10) :
                 time.sleep(0.5)
                 continue
 
@@ -2937,7 +2940,7 @@ def run_one_adb(itr, adb):
                     stamina = adb.get_stamina()
 
 
-            if check_abnormal(adb) == 5 :
+            if check_abnormal(adb) in (5, 10) :
                 time.sleep(0.5)
                 continue
 
@@ -2952,7 +2955,7 @@ def run_one_adb(itr, adb):
                 adb.get_unit(type="궁병")
                 time.sleep(1)
 
-            if check_abnormal(adb) == 5 :
+            if check_abnormal(adb) in (5, 10) :
                 time.sleep(0.5)
                 continue
 
@@ -2969,7 +2972,7 @@ def run_one_adb(itr, adb):
                 print("건물 2 건설 시작")
 
             if unit1 in (1, 2) or unit2 in (1, 2) or unit3 in (1, 2):
-                if check_abnormal(adb) == 5 :
+                if check_abnormal(adb) in (5, 10) :
                     time.sleep(0.5)
                     continue
                 if adb.check_help() == True :
@@ -2986,7 +2989,7 @@ def run_one_adb(itr, adb):
                     adb.unit_training(unit="궁병")
                     time.sleep(1)
 
-            if check_abnormal(adb) == 5 :
+            if check_abnormal(adb) in (5, 10) :
                 time.sleep(0.5)
                 continue
             if adb.check_help() == True :
@@ -2997,7 +3000,7 @@ def run_one_adb(itr, adb):
                 adb.research()
                 time.sleep(1)
 
-            if check_abnormal(adb) == 5 :
+            if check_abnormal(adb) in (5, 10) :
                 time.sleep(0.5)
                 continue
             if adb.check_help() == True :
@@ -3011,7 +3014,7 @@ def run_one_adb(itr, adb):
 
             # 자원 채취
             if queue_check == True and ((stamina > 15 or zero_count == 1) or (zero_count > 1)):
-                if check_abnormal(adb) == 5 :
+                if check_abnormal(adb) in (5, 10) :
                     time.sleep(0.5)
                     continue
                 if adb.check_help() == True :
@@ -3127,7 +3130,7 @@ def run_one_adb(itr, adb):
 
             if adb.port in [5555, 5556, 5675, 5685, 5695, 5705] and itrr % 5 == 0:
 
-                if check_abnormal(adb) == 5 :
+                if check_abnormal(adb) in (5, 10) :
                     time.sleep(0.5)
                     continue
                 adb.tap(35,35) # 초상화 클릭
