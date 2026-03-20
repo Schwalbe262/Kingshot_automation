@@ -192,7 +192,79 @@ class ADB:
     def game_start(self) :
         self.tap(475,50) # 게임시작
 
+    def adb_input_text(self, text="", press_enter=False):
+        """
+        adb shell input text 기반 직접 입력.
+        - 공백은 %s로 치환
+        - 일부 특수문자는 셸 해석 충돌 방지를 위해 이스케이프
+        반환값: 성공 True, 실패 False
+        """
+        text = "" if text is None else str(text)
+        encoded = (
+            text
+            .replace("%", "%25")
+            .replace(" ", "%s")
+            .replace("&", r"\&")
+            .replace("|", r"\|")
+            .replace("<", r"\<")
+            .replace(">", r"\>")
+            .replace("(", r"\(")
+            .replace(")", r"\)")
+            .replace(";", r"\;")
+            .replace('"', r"\"")
+            .replace("'", r"\'")
+        )
+
+        cmd = [
+            self.adb_path,
+            "-s", self.device_id,
+            "shell",
+            "input",
+            "text",
+            encoded
+        ]
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=ADB_COMMAND_TIMEOUT_SEC
+            )
+            if result.returncode != 0:
+                return False
+        except subprocess.TimeoutExpired:
+            return False
+        except Exception:
+            return False
+
+        if press_enter:
+            self.shell(f'{self.adb_path} -s {self.device_id} shell input keyevent 66')
+        return True
+
+    def adb_backspace(self, count=1):
+        """
+        백스페이스(KEYCODE_DEL=67)를 count만큼 입력.
+        반환값: 성공 True, 실패 False
+        """
+        try:
+            n = int(count)
+        except (TypeError, ValueError):
+            n = 1
+
+        if n < 1:
+            return True
+
+        for _ in range(n):
+            result = self.shell(f'{self.adb_path} -s {self.device_id} shell input keyevent 67')
+            if isinstance(result, str) and result.startswith("Timeout:"):
+                return False
+        return True
+
     def typing(self, word=""):
+        # 우선 adb 직접 입력을 시도하고, 실패하면 기존 좌표 탭 방식으로 폴백
+        if self.adb_input_text(word):
+            return
 
         def tap_key(c) : 
             if c == "a" : self.tap(53,751)
@@ -1208,7 +1280,7 @@ class ADB:
             curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
             next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
 
-            if any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격", "집결", "대기"]):
+            if any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격", "집결", "대기", "주둔"]):
                 result_s2.append(next_text)
                 index = index + 1
             elif any(keyword in curr_text for keyword in ["방앗", "앗간"]):
@@ -2118,14 +2190,14 @@ class ADB:
         # 아무것도 없을 경우
         if detections == [] : 
             self.back()
-            self.screen_shot()
-            report_dir = os.path.join(os.getcwd(), "report") # debug용 report 생성
-            os.makedirs(report_dir, exist_ok=True)
-            src_path = f"{self.base}\\{self._f('capture.png')}"
-            random_name = f"empty_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}.png"
-            dst_path = os.path.join(report_dir, random_name)
-            if os.path.exists(src_path):
-                shutil.copy2(src_path, dst_path)
+            # self.screen_shot()
+            # report_dir = os.path.join(os.getcwd(), "report") # debug용 report 생성
+            # os.makedirs(report_dir, exist_ok=True)
+            # src_path = f"{self.base}\\{self._f('capture.png')}"
+            # random_name = f"empty_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}.png"
+            # dst_path = os.path.join(report_dir, random_name)
+            # if os.path.exists(src_path):
+            #     shutil.copy2(src_path, dst_path)
             time.sleep(1)
             return False
         # 뭔가 감지 된 경우
@@ -2353,7 +2425,7 @@ class ADB:
         if detections == [] : 
             time.sleep(1)
             return False
-        # 힐 버튼 클릭
+        # 힐 버튼 아이콘콘 클릭
         else :
             self.tap(detections[0][1], detections[0][2])
             time.sleep(1)
@@ -2366,9 +2438,12 @@ class ADB:
         has_heal = any("치료" in str(item[0]) for item in processed_result)
         
         if has_heal == True :
-            self.tap(390,700)
+            self.tap(390,700) # 치료 버튼 
             time.sleep(1)
-            self.tap(390,700)
+            if self.solve_resource() == True :
+                self.tap(390,700)
+                time.sleep(1)
+            self.tap(390,700) # 연맹 협조
             time.sleep(1)
             self.back()
 
@@ -2413,7 +2488,10 @@ class ADB:
         # 쉴드가 이미 걸려있을 경우 back을 한번 더눌러야하는데 추후 코드 수정정
 
 
-    def unit_action(self, x, y, mod, human_attack=False) :
+
+    # 다른사람의 공격으로 주둔지가 사라졌을 때의 예외처리 코드 필요
+    # 단순히 json 수정 코드를 앞으로 옮기면 코드 실행 중 전원 오프로 종료 됐을 때 대응이 안될 것 같음
+    def unit_action(self, x, y, mod, all_troops=False, human_attack=False) :
 
         def _update_global_unit_coords(add=True):
             state = load_runtime_state()
@@ -2460,14 +2538,16 @@ class ADB:
 
         self.tap(160,800) # 좌표 검색
         time.sleep(1)
-        self.tap(185,470)
+        self.tap(185,470) # x
         time.sleep(1)
-        self.typing_number(f"bbbbb{x}e")
-        self.tap(385,470)
+        self.adb_backspace(5)
+        self.adb_input_text(f"{x}", press_enter=True)
+        self.tap(385,470) # y
         time.sleep(1)
-        self.typing_number(f"bbbbb{y}e")
+        self.adb_backspace(5)
+        self.adb_input_text(f"{y}", press_enter=True)
         time.sleep(1)
-        self.tap(270,565)
+        self.tap(270,565) # 이동
         time.sleep(1)
         self.tap(270,480) # 땅 클릭
         time.sleep(1)
@@ -2493,16 +2573,11 @@ class ADB:
             for item in processed_result :
                 # 공격나갔는데 이미 주둔중인 병력 있으면 뺌
                 if "주둔" in item[0] and mod == "attack" :
-                    self.unit_action(x=item[1], y=item[2], mod="back_all")
-                    return False
+                    self.unit_action(x=x, y=y, mod="back_all")
+                    if all_troops == True :
+                        return False
                 # 이동중인 부대가 있음
-                elif (
-                    "복귀" in item[0] 
-                    or "X" in item[0] 
-                    or "Y" in item[0]
-                    or "x" in item[0]
-                    or "y" in item[0]
-                ):
+                elif any(keyword in item[0] for keyword in ["복귀", "X", "Y", "x", "y"]):
                     return 20
         
 
@@ -2527,8 +2602,13 @@ class ADB:
                 elif item[0] == text:
                     # 원하는 기능의 동작 버튼 (ex>배치)
                     result = (item[1], item[2]-10)
+
+
         
-  
+        if result is None and mod == "attack" :
+            # 모종의 이유로 사라졌으나 좌표는 지워줌
+            _update_global_unit_coords(add=False)
+            return 100
 
 
         if result is not None :
@@ -2569,10 +2649,34 @@ class ADB:
                 self.tap(410,910) # 출정
                 time.sleep(2*self.time)
                 _update_global_unit_coords(add=True)
+                return True
             
             elif mod == "attack" :
+                if all_troops == False :
+                    self.screen_shot(name="_allocation")
+                    result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
+                    processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
+
+                    flag = 0
+                    for item in processed_result:
+                        if "균등" in item[0] or "배치" in item[0] :
+                            self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
+                            time.sleep(1*self.time)
+                            self.tap(410,910) # 출정
+                            time.sleep(2*self.time)
+                            _update_global_unit_coords(add=True)
+                            return True
+                        if "비례" in item[0] :
+                            flag = 1
+
+                    if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
+                        self.tap(220,890) # 균등배치
+                    elif flag == 1 : # 비례라는 단어가 탐지된 경우
+                        self.tap(150,890) # 균등배치
+                    time.sleep(1*self.time)
                 self.tap(410,910) # 출정
                 _update_global_unit_coords(add=False)
+                return True
         else :
             self.back()
         return None
@@ -2962,7 +3066,7 @@ def run_one_adb(itr, adb):
     try:
         print(f"adb{itr} 시작")
         run_started_at = time.time()
-        timeout_seconds = 10 * 60
+        timeout_seconds = 8 * 60
 
         adb.itr = itr
         switching = 0
@@ -3317,52 +3421,71 @@ def run_one_adb(itr, adb):
                             flag = True
 
 
-                    # 전군 돌격때 공격
-                    elif is_blocked_time == True :
-                        if adb.port in (5555, 5556):
-                            with RUNTIME_STATE_LOCK:
-                                runtime_state = load_runtime_state()
-                            coord_list = runtime_state.get("unit_action_coords", [])
-                            if not isinstance(coord_list, list):
-                                coord_list = []
 
-                            now_ts = int(time.time())
-                            valid_coords = []
-                            for item in coord_list:
-                                if not isinstance(item, dict):
-                                    continue
-                                x_val = item.get("x")
-                                y_val = item.get("y")
-                                ts = item.get("time", item.get("move_time"))
-                                try:
-                                    ts = int(ts)
-                                except (TypeError, ValueError):
-                                    continue
-                                if x_val is None or y_val is None:
-                                    continue
-                                if now_ts - ts >= 300:
-                                    valid_coords.append((ts, str(x_val), str(y_val)))
+                    if flag == True :
 
-                            if valid_coords:
-                                valid_coords.sort(key=lambda v: v[0])  # 가장 오래된 시간 우선
-                                _, target_x, target_y = valid_coords[0]
-                                adb.unit_action(x=target_x, y=target_y, mod="attack")
-                        else :
-                            random_x = str(random.randint(520, 525))
-                            random_y = str(random.randint(350, 360))
-                            adb.unit_action(self=adb, x=random_x, y=random_y, mod="move")
+
+                        if adb.runtime_read("stamina", 0) > 60 and is_blocked_time == False : # 사냥
+
+                            if adb.port not in (5555, 5556):
+                                adb.hunting2(level=2)
+                            else :
+                                adb.hunting2(level=3)
+
+                        # 전군 돌격때 공격
+                        elif is_blocked_time == True :
+                            if adb.port in (5555, 5556):
+                                def _get_oldest_valid_attack_coord():
+                                    with RUNTIME_STATE_LOCK:
+                                        runtime_state = load_runtime_state()
+                                    coord_list = runtime_state.get("unit_action_coords", [])
+                                    if not isinstance(coord_list, list):
+                                        coord_list = []
+
+                                    now_ts = int(time.time())
+                                    valid_coords = []
+                                    for item in coord_list:
+                                        if not isinstance(item, dict):
+                                            continue
+                                        x_val = item.get("x")
+                                        y_val = item.get("y")
+                                        ts = item.get("time", item.get("move_time"))
+                                        try:
+                                            ts = int(ts)
+                                        except (TypeError, ValueError):
+                                            continue
+                                        if x_val is None or y_val is None:
+                                            continue
+                                        if now_ts - ts >= 300:
+                                            valid_coords.append((ts, str(x_val), str(y_val)))
+
+                                    if not valid_coords:
+                                        return None
+                                    valid_coords.sort(key=lambda v: v[0])  # 가장 오래된 시간 우선
+                                    return valid_coords[0][1], valid_coords[0][2]
+
+                                target_coord = _get_oldest_valid_attack_coord()
+                                attempt = 0
+                                max_attempts = 5
+                                while target_coord and attempt < max_attempts:
+                                    target_x, target_y = target_coord
+                                    action = adb.unit_action(x=target_x, y=target_y, mod="attack", all_troops=False)
+                                    if action != 100:
+                                        break  # 정상 실행 or 다른 실패코드면 중단
+                                    attempt += 1
+                                    target_coord = _get_oldest_valid_attack_coord()
+                                            
+                            else :
+                                random_x = str(random.randint(520, 525))
+                                random_y = str(random.randint(350, 360))
+                                adb.unit_action(x=random_x, y=random_y, mod="move")
+                                
+                        # 전군 돌격 끝나면 철수
+                        elif is_rest_time == True :
+                            adb.unit_action(x="545", y="260", mod="back_all")
                             
-                    # 전군 돌격 끝나면 철수
-                    elif is_rest_time == True :
-                        adb.unit_action(x="545", y="260", mod="back_all")
-                    
 
-                    if adb.runtime_read("stamina", 0) > 60 and zero_count == 1 and flag == True : # 사냥
-
-                        if adb.port not in (5555, 5556):
-                            adb.hunting2(level=2)
-                        else :
-                            adb.hunting2(level=3)
+                        
 
                     time.sleep(1)
 
@@ -3415,6 +3538,9 @@ def run_one_adb(itr, adb):
                 if switching == 0 :
                     adb.itr = 0
                 switching += 1
+                adb.runtime_write("itrr", itrr := 0)
+            # 부계정 없는 경우우
+            elif itrr >= 5 :
                 adb.runtime_write("itrr", itrr := 0)
             else :
                 # 이 adb의 루프 카운트 +1 (각자 따로 돔)
