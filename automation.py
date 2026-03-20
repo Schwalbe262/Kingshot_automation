@@ -19,6 +19,8 @@ import re
 
 import os
 
+import json
+
 from datetime import datetime
 
 import traceback
@@ -32,6 +34,14 @@ import shutil
 ADB_COMMAND_TIMEOUT_SEC = 20
 OCR_CONCURRENCY_LIMIT = 2
 OCR_SEMAPHORE = threading.Semaphore(OCR_CONCURRENCY_LIMIT)
+
+def get_runtime_base_dir():
+    """스크립트/주피터 모두에서 동작하는 기준 경로."""
+    try:
+        return os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        # 주피터/인터랙티브 환경에서는 __file__이 없으므로 현재 작업 경로 사용
+        return os.getcwd()
 
 class ADB: 
     def __init__(self, device_ip="127.0.0.1", port=5555):
@@ -57,12 +67,21 @@ class ADB:
         self._last_help_check_result = False
         self._last_reconnect_check_ts = 0.0
         self._last_reconnect_check_result = False
+        self.runtime_device_key = None
 
     def _f(self, name):
         """동시 실행 시 디바이스별 고유 파일명 (포트 접미사)."""
         if not name.endswith('.png'):
             return name + f'_{self.port}.png'
         return name.replace('.png', f'_{self.port}.png')
+
+    def runtime_read(self, field, default=None):
+        key = self.runtime_device_key or get_runtime_device_key(self, self.itr)
+        return runtime_db.read(key, field, default)
+
+    def runtime_write(self, field, value):
+        key = self.runtime_device_key or get_runtime_device_key(self, self.itr)
+        runtime_db.write(key, field, value)
 
     def _run_ocr(self, image_path, retries=2):
         """
@@ -126,7 +145,7 @@ class ADB:
     def apps(self, app_package):
         command = f'{self.adb_path} -s {self.device_id} shell monkey -p {app_package} -c android.intent.category.LAUNCHER 1'
         return self.shell(command)
-    
+
     def tap(self, x, y):
         command = f'{self.adb_path} -s {self.device_id} shell input tap {x} {y}'
         # print(command)
@@ -139,9 +158,6 @@ class ADB:
     def home(self):
         command = f'{self.adb_path} -s {self.device_id} shell input keyevent 3'
         return self.shell(command)
-
-    def game_start(self) :
-        self.tap(475,50) # 게임시작
 
     def drag_with_adb(self, x1, y1, x2, y2, duration_ms=500):
         """
@@ -173,22 +189,8 @@ class ADB:
         else:
             pass
 
-
-    def update_kingshot(self) :
-
-        self.home()
-        time.sleep(1)
-        self.tap(270,150)
-        time.sleep(1)
-        self.tap(375,425)
-        time.sleep(1)
-        self.tap(230,50)
-        time.sleep(1)
-        self.typing("king shot")
-        time.sleep(1)
-
-    def start_kingshot(self) :
-        self.tap(110,330)
+    def game_start(self) :
+        self.tap(475,50) # 게임시작
 
     def typing(self, word=""):
 
@@ -239,41 +241,285 @@ class ADB:
         for c in string :
             tap_key(c)
 
+    def typing_number(self, word="") :
 
-    def msg_check(self, msg, x_min, x_max, y_min, y_max, y_threshold, scale):
-        self.screen_shot(name="_check_msg")
-        result = self.get_ocr_raw(
-            file_name="capture_check_msg.png",
-            x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
-            y_threshold=y_threshold, scale=scale
-        )
-        processed_result = self.process_ocr(
-            result=result, x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
-            y_threshold=y_threshold, scale=scale
-        )
-        return any(msg in str(item[0]) for item in processed_result)
+        def tap_number(c) :
+            if c == "1" : self.tap(75,665)
+            elif c == "2" : self.tap(215,665)
+            elif c == "3" : self.tap(360,665)
+            elif c == "4" : self.tap(75,745)
+            elif c == "5" : self.tap(215,745)
+            elif c == "6" : self.tap(360,745)
+            elif c == "7" : self.tap(75,825)
+            elif c == "8" : self.tap(215,825)
+            elif c == "9" : self.tap(360,825)
+            elif c == "0" : self.tap(215,910)
+            elif c == "." : self.tap(75,910)
+            elif c == "b" : self.tap(490,830) # backspace
+            elif c == "e" : self.tap(480,585) # enter
+
+        string = list(word) # 타이핑
+        for c in string :
+            tap_number(c)
 
 
+    def start_kingshot(self) :
+        # self.tap(110,330)
+        self.tap(440,500)
 
-    def get_money(self) :
+    def update_kingshot(self) :
 
-        self.tap(50,920) # 토벌
+        self.home()
         time.sleep(1)
-        self.tap(460,690) # 수령
+        self.tap(270,150)
+        time.sleep(1)
+        self.tap(375,425)
+        time.sleep(1)
+        self.tap(230,50)
+        time.sleep(1)
+        self.typing("king shot")
         time.sleep(1)
 
-        result = self.msg_check(msg="수령", x_min=230, x_max=315, y_min=670, y_max=720, y_threshold=10, scale=3)
+    def screen_shot(self, name="") :
+        local_name = self._f(f"capture{name}.png")
+        dest_path = f"{self.base}\\{local_name}"
+        command = f'{self.adb_path} -s {self.device_id} shell screencap -p /sdcard/Pictures/Screenshots/capture{name}.png'
+        self.shell(command)
+        command = f'{self.adb_path} -s {self.device_id} pull /sdcard/Pictures/Screenshots/capture{name}.png "{dest_path}"'
+        self.shell(command)
 
-        if result == True :
-            self.tap(260,690) # 수령
-            time.sleep(1)
-            self.back()
-            time.sleep(1)
+    def crop_image(self, file_name="capture.png", x_min=0, x_max=480, y_min=0, y_max=1000) :
+        img_path = f"{self.base}\\{self._f(file_name)}"
+        image = cv2.imread(img_path)
+        cropped_image = image[y_min:y_max, x_min:x_max]
+        cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
+        cv2.imwrite(cropped_img_path, cropped_image)
+        return cropped_image
 
-        self.back()
-        time.sleep(1)
+    def get_ocr_raw(self, file_name="capture.png", x_min=0, x_max=480, y_min=0, y_max=1000, y_threshold=10, scale=3):
+        img_path = f"{self.base}\\{self._f(file_name)}"
+        image = cv2.imread(img_path)
+        if image is None:
+            raise FileNotFoundError(f"Image not found at path: {img_path}")
+        cropped_image = image[y_min:y_max, x_min:x_max]
+        if scale and scale != 1:
+            h, w = cropped_image.shape[:2]
+            cropped_image = cv2.resize(cropped_image, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+            gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
+            cropped_image = cv2.cvtColor(cv2.equalizeHist(gray), cv2.COLOR_GRAY2BGR)
+        cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
+        cv2.imwrite(cropped_img_path, cropped_image)
+        result = self._run_ocr(cropped_img_path)
 
+        return result
 
+    def get_ocr_raw_advanced(
+        self,
+        file_name="capture.png",
+        x_min=0, x_max=480, y_min=0, y_max=1000,
+        y_threshold=10,
+        scale=3,
+        use_clahe=True,
+        clahe_clip_limit=2.0,
+        clahe_tile_grid_size=(8, 8),
+        use_gamma=True,
+        gamma=1.2,
+        use_binary=True,
+        binary_threshold=0,        # 값 
+        binary_inv=True           # 글자를 흰색으로 만들고 싶으면 True
+    ):
+        img_path = f"{self.base}\\{self._f(file_name)}"
+        image = cv2.imread(img_path)
+        if image is None:
+            raise FileNotFoundError(f"Image not found at path: {img_path}")
+        cropped_image = image[y_min:y_max, x_min:x_max]
+        if scale and scale != 1:
+            h, w = cropped_image.shape[:2]
+            cropped_image = cv2.resize(cropped_image, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+
+        # 1) 그레이 변환
+        gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
+
+        # 2) CLAHE (선택)
+        if use_clahe:
+            clahe = cv2.createCLAHE(clipLimit=clahe_clip_limit, tileGridSize=clahe_tile_grid_size)
+            gray = clahe.apply(gray)
+        else:
+            # 기존 equalizeHist 유지하고 싶으면 여기에서 사용
+            gray = cv2.equalizeHist(gray)
+
+        # 3) 감마 보정 (선택)
+        if use_gamma and gamma != 1.0:
+            inv_gamma = 1.0 / gamma
+            table = (np.array([(i / 255.0) ** inv_gamma * 255 for i in np.arange(0, 256)])
+                    .astype("uint8"))
+            gray = cv2.LUT(gray, table)
+
+        # 4) 이진화 (선택) – 글자를 확실히 흰색/배경 검정으로
+        if use_binary:
+            if binary_threshold == 0:
+                # OTSU 자동 임계값
+                thresh_type = cv2.THRESH_BINARY_INV if binary_inv else cv2.THRESH_BINARY
+                _, gray = cv2.threshold(gray, 0, 255, thresh_type + cv2.THRESH_OTSU)
+            else:
+                thresh_type = cv2.THRESH_BINARY_INV if binary_inv else cv2.THRESH_BINARY
+                _, gray = cv2.threshold(gray, binary_threshold, 255, thresh_type)
+
+        cropped_image = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+        cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
+        cv2.imwrite(cropped_img_path, cropped_image)
+        result = self._run_ocr(cropped_img_path)
+
+        return result
+
+    def process_ocr(self, result, x_min=0, x_max=480, y_min=0, y_max=1000, y_threshold=10, scale=1, merge=True):
+        if result is None or result == [None] or result[0] is None:
+            return []
+        processed_lines = []
+
+        for block in result[0]:
+            coords = block[0]
+            text = block[1][0]
+            confidence = block[1][1]  # 인식률
+
+            # 업스케일된 이미지로 OCR한 경우: scale로 나눈 뒤 원본 기준으로 보정
+            x_coords = [point[0] / scale + x_min for point in coords]
+            y_coords = [point[1] / scale + y_min for point in coords]
+
+            x_mean = np.mean(x_coords)
+            y_mean = np.mean(y_coords)
+
+            # 각 영역의 x 최소/최대와 y 최소/최대 계산
+            x_left = min(x_coords)
+            x_right = max(x_coords)
+            y_top = min(y_coords)
+            y_bottom = max(y_coords)
+
+            processed_lines.append({
+                "text": text,
+                "x_mean": x_mean,
+                "y_mean": y_mean,
+                "x_left": x_left,
+                "x_right": x_right,
+                "y_top": y_top,
+                "y_bottom": y_bottom,
+                "confidence": confidence
+            })
+
+        # Y좌표 기준으로 정렬
+        processed_lines.sort(key=lambda x: x["y_mean"])
+
+        # mod=False: 병합 없이 블록 단위로 반환
+        if not merge:
+            return [[item["text"], item["x_mean"], item["y_mean"],
+                     item["x_left"], item["x_right"], item["y_top"], item["y_bottom"],
+                     item["confidence"]] for item in processed_lines]
+
+        # 같은 줄 텍스트 병합 (mod=True, 기본)
+        grouped_lines = []
+        current_line = []
+
+        for item in processed_lines:
+            if not current_line:
+                current_line.append(item)
+            else:
+                # 같은 줄인지 확인 (y_threshold 기준)
+                if abs(item["y_mean"] - current_line[-1]["y_mean"]) <= y_threshold:
+                    current_line.append(item)
+                else:
+                    # 병합 후 저장 (X좌표 기준으로 정렬)
+                    grouped_lines.append(sorted(current_line, key=lambda x: x["x_mean"]))
+                    current_line = [item]
+
+        if current_line:
+            grouped_lines.append(sorted(current_line, key=lambda x: x["x_mean"]))
+
+        # 병합된 결과 처리
+        final_output = []
+        for group in grouped_lines:
+            merged_text = " ".join([item["text"] for item in group])
+            x_mean = np.mean([item["x_mean"] for item in group])
+            y_mean = np.mean([item["y_mean"] for item in group])
+            x_left = min([item["x_left"] for item in group])
+            x_right = max([item["x_right"] for item in group])
+            y_top = min([item["y_top"] for item in group])
+            y_bottom = max([item["y_bottom"] for item in group])
+            confidence = np.mean([item["confidence"] for item in group])
+
+            final_output.append([merged_text, x_mean, y_mean, x_left, x_right, y_top, y_bottom, confidence])
+
+        return final_output
+
+    def get_ocr(self, file_name="capture.png", x_min=0, x_max=480, y_min=0, y_max=1000, y_threshold=10):
+        img_path = f"{self.base}\\{self._f(file_name)}"
+        image = cv2.imread(img_path)
+        if image is None:
+            raise FileNotFoundError(f"Image not found at path: {img_path}")
+        height, width, _ = image.shape
+        cropped_image = image[y_min:y_max, x_min:x_max]
+        cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
+        cv2.imwrite(cropped_img_path, cropped_image)
+        result = self._run_ocr(cropped_img_path)
+
+        # print(result)
+
+        if result == [None] : # ocr 텍스트 없음조건
+            return [None]
+
+        # 1. 결과를 Y좌표 기준으로 필터링
+        lines = []
+        for line in result[0]:
+            coords = line[0]  # OCR 좌표
+            text = line[1][0]  # OCR 텍스트
+            x_mean = np.mean([coords[0][0], coords[2][0]])  # X좌표 평균값
+            y_mean = np.mean([coords[0][1], coords[2][1]])  # Y좌표 평균값
+
+            # Y좌표 필터링
+            lines.append({"x_mean": x_mean, "y_mean": y_mean, "text": text})
+
+        # 2. Y좌표 기준으로 정렬
+        lines.sort(key=lambda x: x["y_mean"])
+
+        # 3. Y좌표 차이에 따라 그룹화
+        grouped_lines = []
+        current_line = []
+
+        for item in lines:
+            if not current_line:
+                current_line.append(item)
+            else:
+                # 이전 Y좌표와 비교하여 같은 줄인지 판단
+                if abs(item["y_mean"] - current_line[-1]["y_mean"]) <= y_threshold:
+                    current_line.append(item)
+                else:
+                    # X좌표 기준으로 정렬 후 저장
+                    grouped_lines.append(sorted(current_line, key=lambda x: x["x_mean"]))
+                    current_line = [item]
+
+        # 마지막 줄 추가
+        if current_line:
+            grouped_lines.append(sorted(current_line, key=lambda x: x["x_mean"]))
+
+        # 4. 결과 출력
+        # for line in grouped_lines:
+            # print(" ".join([item["text"] for item in line]))
+
+        return grouped_lines
+
+    def ocr_to_plain(self, ocr) :
+
+        result_text = ""
+
+        for line in ocr:
+            # 각 줄의 텍스트를 공백으로 연결하고 줄바꿈 추가
+            line_text = " ".join([item["text"] for item in line])
+            result_text += line_text + "\n"
+
+        # 마지막 줄바꿈 제거
+        result_text = result_text.strip()
+
+        return result_text    
 
     def extract_ocr_texts(self, processed_result):
         texts = []
@@ -289,19 +535,28 @@ class ADB:
             texts.append(text)
         return texts
 
-
     def find_keywords(self, processed_result, keywords):
         if isinstance(keywords, str):
             keywords = [keywords]
         ocr_texts_lower = [text.lower() for text in self.extract_ocr_texts(processed_result)]
         return [word for word in keywords if any(str(word).lower() in text for text in ocr_texts_lower)]
 
-
     def has_keywords(self, processed_result, keywords, min_count=1):
         found_words = self.find_keywords(processed_result, keywords)
         return len(found_words) >= min_count
-    
 
+    def msg_check(self, msg, x_min, x_max, y_min, y_max, y_threshold, scale):
+        self.screen_shot(name="_check_msg")
+        result = self.get_ocr_raw(
+            file_name="capture_check_msg.png",
+            x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
+            y_threshold=y_threshold, scale=scale
+        )
+        processed_result = self.process_ocr(
+            result=result, x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
+            y_threshold=y_threshold, scale=scale
+        )
+        return any(msg in str(item[0]) for item in processed_result)
 
     def search_template(self, name="None", threshold=0.55) :
 
@@ -351,9 +606,68 @@ class ADB:
 
         return detections
 
+    def compare_inout(self, cropped_file_name="cropped_capture_inout.png", in_ref="in.png", out_ref="out.png"):
+        """크롭된 이미지가 in.png에 더 가까운지 out.png에 더 가까운지 판단. 'in' 또는 'out' 반환. 참조 이미지는 코드 실행 경로에서 로드."""
+        crop = cv2.imread(f"{self.base}\\{self._f(cropped_file_name)}")
+        in_img = cv2.imread(in_ref)
+        out_img = cv2.imread(out_ref)
+        if crop is None:
+            raise FileNotFoundError(f"Cropped image not found: {cropped_file_name}")
+        if in_img is None or out_img is None:
+            raise FileNotFoundError(f"Reference images not found: {in_ref}, {out_ref} (실행 경로: {os.getcwd()})")
+        # 크기 맞추기 (참조 이미지 크기에 맞춤)
+        h, w = in_img.shape[:2]
+        crop = cv2.resize(crop, (w, h), interpolation=cv2.INTER_LINEAR)
+        out_img = cv2.resize(out_img, (w, h), interpolation=cv2.INTER_LINEAR)
+        # 유사도: MSE가 작을수록 더 유사
+        mse_in = np.mean((crop.astype(float) - in_img.astype(float)) ** 2)
+        mse_out = np.mean((crop.astype(float) - out_img.astype(float)) ** 2)
+        return "in" if mse_in <= mse_out else "out"
 
+    def matches_reference(self, cropped_file_name, reference_name="reconnect.png", mse_threshold=800):
+        """크롭된 이미지가 참조 이미지와 일치하는지 판단. MSE가 threshold 이하면 True. 참조 이미지는 코드 실행 경로에서 로드."""
+        crop = cv2.imread(f"{self.base}\\{self._f(cropped_file_name)}")
+        ref = cv2.imread(reference_name)
+        if crop is None:
+            raise FileNotFoundError(f"Cropped image not found: {cropped_file_name}")
+        if ref is None:
+            raise FileNotFoundError(f"Reference image not found: {reference_name} (실행 경로: {os.getcwd()})")
+        h, w = ref.shape[:2]
+        crop = cv2.resize(crop, (w, h), interpolation=cv2.INTER_LINEAR)
+        mse = np.mean((crop.astype(float) - ref.astype(float)) ** 2)
+        return mse <= mse_threshold
 
+    def check_reconnect(self, mse_threshold=800, min_interval_sec=8.0, force=False) :
+        now = time.time()
+        if (not force) and (now - self._last_reconnect_check_ts < min_interval_sec):
+            return self._last_reconnect_check_result
 
+        self.screen_shot(name="_reconnect")
+        self.crop_image(file_name="capture_reconnect.png", x_min=50, x_max=490, y_min=320, y_max=630)
+        result = self.matches_reference(
+            cropped_file_name="cropped_capture_reconnect.png",
+            reference_name="reconnect.png",
+            mse_threshold=mse_threshold
+        )
+        self._last_reconnect_check_ts = now
+        self._last_reconnect_check_result = result
+        return result
+
+    def check_help(self, mse_threshold=800, min_interval_sec=2.5, force=False) :
+        now = time.time()
+        if (not force) and (now - self._last_help_check_ts < min_interval_sec):
+            return self._last_help_check_result
+
+        self.screen_shot(name="_help")
+        self.crop_image(file_name="capture_help.png", x_min=375, x_max=430, y_min=825, y_max=875)
+        result = self.matches_reference(
+            cropped_file_name="cropped_capture_help.png",
+            reference_name="help.png",
+            mse_threshold=mse_threshold
+        )
+        self._last_help_check_ts = now
+        self._last_help_check_result = result
+        return result
 
     def get_state(self, solve_abnormal=True) :
 
@@ -439,6 +753,24 @@ class ADB:
 
         return state
 
+    def check_abnormal(self, max_actions=8) :
+        """무한 복구 루프를 막기 위해 최대 반복 횟수 제한."""
+        fixed = False
+        for _ in range(max_actions):
+            state = self.get_state()
+            if state["action"] == False:
+                return fixed
+            fixed = True
+            time.sleep(0.7 * self.time)
+
+        # 반복 상한을 넘기면 강제로 한 번 빠져나와 다음 루프로 넘긴다.
+        self.back()
+        time.sleep(1 * self.time)
+        return True
+
+    def solve_abnormal(self) :
+
+        return 0
 
     def solve_resource(self) :
 
@@ -466,16 +798,338 @@ class ADB:
         else :
             return False
 
-        
+    def get_people(self) :
+
+        self.tap(470,610)
+        time.sleep(1)
+        self.screen_shot(name="_people")
+
+        result = self.get_ocr_raw(file_name="capture_people.png", x_min=210, x_max=330, y_min=820, y_max=860, y_threshold=10, scale=1)
+        processed_result = self.process_ocr(result=result, x_min=210, x_max=330, y_min=820, y_max=860, y_threshold=10, scale=1, merge=True)
+
+        if processed_result :
+            self.tap(270,840)
+            time.sleep(5)
+
+    def get_VIP(self) :
+
+        self.tap(490,60)
+        time.sleep(2)
+        self.tap(470,215)
+        time.sleep(2)
+        self.back()
+        time.sleep(1)
+
+    def get_money(self) :
+
+        self.tap(50,920) # 토벌
+        time.sleep(1)
+        self.tap(460,690) # 수령
+        time.sleep(1)
+
+        result = self.msg_check(msg="수령", x_min=230, x_max=315, y_min=670, y_max=720, y_threshold=10, scale=3)
+
+        if result == True :
+            self.tap(260,690) # 수령
+            time.sleep(1)
+            self.back()
+            time.sleep(1)
+
+        self.back()
+        time.sleep(1)
+
+    def union_hunt(self) :
+
+        self.tap(400, 920) # 연맹 버튼 누르기
+        time.sleep(3)
+        self.tap(150,500) # 연맹 전쟁
+        time.sleep(1)
+        self.tap(100,900) # 집결결
+        time.sleep(1)
+        self.tap(270,920) # 자동 참여
+        time.sleep(2)
+        self.tap(360,745) # 켜기
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+
+    def union_reward(self) :
+
+        self.tap(400, 920) # 연맹 버튼 누르기
+        time.sleep(3)
+        self.tap(430, 500) # 연맹 보물 상자
+        time.sleep(1)
+        self.tap(160, 305) # 전리품 보물상자
+        time.sleep(1)
+        self.tap(270, 905) # 일괄 수령
+        time.sleep(3)
+        self.tap(270, 905) # 일괄 수령
+        time.sleep(1)
+        self.tap(405, 305) # 연맹원 선물
+        time.sleep(1)
+        self.tap(455, 480) # 연맹원 선물
+        time.sleep(1)
+        self.tap(455, 480) # 연맹원 선물
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+
+    def get_hero(self) :
+
+        self.tap(10,415)
+        time.sleep(1)
+        self.drag_with_adb(170, 525, 170, 275, duration_ms=500) # 625 -> 525
+        time.sleep(0.5)
+        self.drag_with_adb(170, 525, 170, 275, duration_ms=500) # 625 -> 525
+        time.sleep(0.5)
+        self.screen_shot(name="_hero")
+
+        result = self.get_ocr_raw(file_name="capture_hero.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
+
+        processed_result
 
 
-    def solve_abnormal(self) :
+        target_avg = None  # 결과를 담을 변수
 
-        return 0
+        for i in range(len(processed_result) - 1):
+            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
+            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
+
+            if "고급모" in curr_text and "무료모" in next_text:
+                curr_val = float(processed_result[i][2])      # 고급모집의 2번 인덱스
+                print(curr_val)
+                next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
+                target_avg = (curr_val + next_val) / 2.0
+                self.tap(305, target_avg) # 모집 버튼 누르기
+                time.sleep(1)
+                self.tap(150, 630) # 고급 모집 버튼 누르기
+                time.sleep(10) # 뽑기 애니메이션 기다림림
+                self.back()
+                time.sleep(1)
+                self.back()
+                print(f"adb{self.itr} 고급 모집 완료")
+                break
+            elif "에픽모" in curr_text and "무료모" in next_text:
+                curr_val = float(processed_result[i][2])      # 에픽픽모집의 2번 인덱스
+                print(curr_val)
+                next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
+                target_avg = (curr_val + next_val) / 2.0
+                self.tap(305, target_avg) # 모집 버튼 누르기
+                time.sleep(1)
+                self.tap(150, 900) # 고급 모집 버튼 누르기
+                time.sleep(10) # 뽑기 애니메이션 기다림림
+                self.back()
+                time.sleep(1)
+                self.back()
+                print(f"adb{self.itr} 에픽 모집 완료")
+                break
+
+        time.sleep(1)
+        self.tap(355,415) # 영웅 창 닫기
+
+    def read_letter(self) :
+
+        self.tap(500,785)
+        time.sleep(1)
+        self.tap(420,930)
+        time.sleep(1)
+        self.back()
+        time.sleep(1)
+        self.back()
+
+    def read_all_letter(self) :
+
+        self.tap(500,785)
+        time.sleep(1)
+
+        self.tap(170,80) # 연맹맹
+        time.sleep(1)
+        self.tap(420,930) # 일괄 읽기
+        time.sleep(2)
+        self.tap(270,80) # 시스템
+        time.sleep(1)
+
+        self.tap(270,80) # 시스템
+        time.sleep(1)
+        self.tap(420,930) # 일괄 읽기
+        time.sleep(2)
+        self.tap(270,80) # 시스템
+        time.sleep(1)
+
+        self.tap(375,80) # 보고
+        time.sleep(1)
+        self.tap(420,930) # 일괄 읽기
+        time.sleep(2)
+        self.tap(270,80) # 시스템
+        time.sleep(1)
+
+        self.back()
+        time.sleep(1)
+
+    def get_quest(self) :
+
+        for _ in range(20) :
+
+            flag = False
+
+            self.tap(30,790) # 퀘스트 버튼
+            time.sleep(1)
+            self.screen_shot(name="_quest")
+
+            result = self.get_ocr_raw(file_name="capture_quest.png", x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=3)
+            processed_result = self.process_ocr(result=result, x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=3, merge=True)
+            print(processed_result)
+
+            for item in processed_result:
+                if item[0] == "수령":
+                    x = item[1]
+                    y = item[2]
+                    self.tap(x,y)
+                    time.sleep(1)
+                    flag = True
+                    break 
+
+            self.back() # 아무것도 수령할거 없는 경우
+            time.sleep(1)
+
+            self.check_abnormal()
+            time.sleep(1)
+
+            if flag == False:
+                break
+
+    def union_research(self) :
+
+        self.tap(10,415)
+        time.sleep(1)
+        self.drag_with_adb(170, 625, 170, 275, duration_ms=800)
+        time.sleep(1)
+        self.screen_shot(name="_union_research")
+
+        result = self.get_ocr_raw(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
 
 
+        target_avg = None  # 결과를 담을 변수
+
+        for i in range(len(processed_result) - 1):
+            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
+            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
+
+            if "기부" in curr_text and "가능" in next_text:
+                curr_val = float(processed_result[i][2])      # 고급모집의 2번 인덱스
+                next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
+                target_avg = (curr_val + next_val) / 2.0
+                self.tap(300, target_avg) # 연맹 기부 버튼 누르기
+                time.sleep(1)
+                self.tap(400, 920) # 연맹 버튼 누르기
+                time.sleep(3)
+                self.tap(420, 700) # 연맹 과학 기술 버튼 누르기
+                time.sleep(0.5)
+                break
+            else :
+                pass
+        else:
+            self.tap(355,415)
+            return False
 
 
+        time.sleep(1)
+        self.tap(510,530)
+        time.sleep(1)
+
+        self.screen_shot(name="_union_research_queue")
+
+        result = self.get_ocr_raw_advanced(file_name="capture_union_research_queue.png", x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, binary_threshold=170)
+        processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, merge=False)
+
+        pattern = r"^\d+/\d+$"
+        for item in processed_result:
+
+            x = 0
+            y = 0
+
+            if re.match(pattern, item[0].replace(" ", "")):
+
+                x = item[1]
+                y = item[2]
+
+                if x != 0 and y != 0 :
+                    self.tap(x,y)
+                    time.sleep(1)
+
+                    self.screen_shot(name="_union_done")
+                    result = self.get_ocr_raw_advanced(file_name="capture_union_done.png", x_min=295, x_max=475, y_min=690, y_max=820, y_threshold=10, scale=3, binary_threshold=170)
+                    processed_result = self.process_ocr(result=result, x_min=295, x_max=475, y_min=690, y_max=820, y_threshold=10, scale=3, merge=False)
+
+                    for item in processed_result:
+                        if "기부" in str(item[0]):
+                            x = item[1]
+                            y = item[2]
+                            for _ in range(10):
+                                self.tap(385,765) # 기부 버튼
+                                time.sleep(0.5)
+                            self.back()
+                            time.sleep(1)
+                            self.back()
+                            print(f"adb{self.itr} 연맹 연구 기여 완료")
+                            return True
+                    else :
+                        self.back()
+                        time.sleep(1)
+
+    def get_supply(self) :
+
+        self.tap(10,415)
+        time.sleep(1)
+        self.drag_with_adb(170, 625, 170, 275, duration_ms=500) # 625 -> 525
+        time.sleep(0.5)
+        self.drag_with_adb(170, 625, 170, 275, duration_ms=500) # 625 -> 525
+        time.sleep(0.5)
+        self.screen_shot(name="_supply")
+
+        result = self.get_ocr_raw(file_name="capture_supply.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
+
+        processed_result
+
+        target_avg = None  # 결과를 담을 변수
+
+        for i in range(len(processed_result) - 1):
+            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
+            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
+
+            if ("창고" in curr_text or "보급" in curr_text) and "완료" in next_text:
+                curr_val = float(processed_result[i][2])      # y좌표
+                print(curr_val)
+                next_val = float(processed_result[i + 1][2])  # y좌표
+                target_avg = (curr_val + next_val) / 2.0
+                self.tap(305, target_avg) # 보급품 수령 버튼튼
+                time.sleep(1)
+                self.tap(270,420)
+                time.sleep(1)
+                self.tap(275,345) # 수령 버튼
+                time.sleep(10)
+                self.tap(270,420)
+                print(f"adb{self.itr} 보급품 수령 완료")
+                break
+
+
+        time.sleep(1)
+        self.tap(355,415) # 영웅 창 닫기
+        time.sleep(1)
+
+        self.tap(275,345) # 고기
+        time.sleep(1)
+        self.tap(270,715)
+        time.sleep(3)
 
     def state_check(self):
 
@@ -604,11 +1258,6 @@ class ADB:
         result = [result_s1, result_s2]
         return result
 
-
-        
-                
-
-    
     def get_stamina(self) :
 
         self.tap(35,35) # 초상화 클릭
@@ -636,9 +1285,6 @@ class ADB:
 
         return stamina
 
-
-
-    
     def get_unit(self, type) :
 
         if type == "보병" :
@@ -664,183 +1310,6 @@ class ADB:
             time.sleep(1)
             self.tap(270,315) # 생산 확인
             time.sleep(1)
-
-
-
-    def research(self) :
-
-
-        def research_try(itr=3) :
-
-            for attempt in range(itr):
-
-                self.screen_shot(name="_research")
-
-                result = self.get_ocr_raw_advanced(file_name="capture_research.png", x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, binary_threshold=170)
-                processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, merge=False)
-
-                position = pattern_search(processed_result)
-
-                # print("========== 연구 큐 인식   ==========")
-                # print(processed_result)
-                # print("================================")
-                # print(position)
-                # print("================================")
-
-                if position == [] :
-                    self.drag_with_adb(270, 500, 270, 450, duration_ms=500)
-                    time.sleep(1)
-                    continue
-
-                for x, y in position:
-
-                    print(x, y)
-
-                    if x != 0 and y != 0:
-                        self.tap(x, y)
-                        time.sleep(1)
-
-                        self.screen_shot(name="_research_check")
-                        result = self.get_ocr_raw_advanced(file_name="capture_research_check.png", x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, binary_threshold=170)
-                        processed_result = self.process_ocr(result=result, x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, merge=False)
-                        
-
-                        x_check = 0
-                        y_check = 0
-                        button_flag = False
-
-                        for item in processed_result:
-                            if "연구" in str(item[0]):
-                                x_check = item[1]
-                                y_check = item[2]
-                                button_flag = True
-                                break
-
-                        if button_flag == False:
-                            self.screen_shot(name="_research_state")
-                            result = self.get_ocr_raw_advanced(file_name="capture_research_state.png", x_min=65, x_max=230, y_min=5, y_max=45, y_threshold=10, scale=3, binary_threshold=170)
-                            processed_result = self.process_ocr(result=result, x_min=65, x_max=230, y_min=5, y_max=45, y_threshold=10, scale=3, merge=False)
-                            flag = False
-                            for item in processed_result:
-                                if "과학" in str(item[0]):
-                                    flag = True
-                                    break
-                            if flag == False :
-                                time.sleep(1)
-                                self.back()
-                            
-                        elif button_flag == True:
-                            # print("========== 연구 버튼 인식 ==========")
-                            # print(processed_result)
-                            # print(x_check, y_check)
-                            # print("================================")
-
-                            self.tap(x_check, y_check)  # 연구 버튼
-                            time.sleep(1)
-
-                            if self.solve_resource() == True :
-                                self.tap(x_check, y_check)  # 연구 버튼
-                                time.sleep(1)
-                                    
-                            self.tap(455, 895)  # 연맹 협조
-                            time.sleep(1)
-                            self.back()
-                            time.sleep(1)
-                            print(f"adb{self.itr} 과학기술 연구 시작 (시도 {attempt+1})")
-                            return True
-
-                time.sleep(1)
-                self.drag_with_adb(270, 500, 270, 450, duration_ms=500)
-                time.sleep(1)
-
-            return False
-        
-
-        def pattern_search(processed_result) :
-
-            position = []
-
-            x = 0
-            y = 0
-            pattern = r"^\d+/\d+$"
-            for item in processed_result:
-                if re.match(pattern, item[0].replace(" ", "")):
-                    x = item[1]
-                    y = item[2]
-                    position.append([x, y])
-
-            return position
-
-
-
-
-        self.tap(10,415)
-        time.sleep(2)
-        self.tap(305,610) # 과학기술 연구
-        time.sleep(3)
-        self.tap(360,550) # 연구 버튼
-        time.sleep(2)
-
-
-        # self.drag_with_adb(270, 400, 270, 600, duration_ms=500)
-        time.sleep(1)
-
-        result = research_try()
-
-        if result == True :
-            time.sleep(1)
-            return True
-        else :
-            time.sleep(1)
-            self.tap(100,85)
-            time.sleep(1)
-            self.drag_with_adb(270, 300, 270, 400, duration_ms=300)
-
-        result = research_try()
-
-        if result == True :
-            time.sleep(1)
-            return True
-        else :
-            time.sleep(1)
-            self.tap(270,85)
-            time.sleep(1)
-            self.drag_with_adb(270, 300, 270, 400, duration_ms=300)
-
-        result = research_try()
-
-        if result == True :
-            time.sleep(1)
-            return True
-        else :
-            time.sleep(1)
-            self.tap(440,85)
-            time.sleep(1)
-            self.drag_with_adb(270, 300, 270, 400, duration_ms=1000)
-            time.sleep(1)
-            self.drag_with_adb(270, 300, 270, 400, duration_ms=1000)
-            time.sleep(1)
-            self.drag_with_adb(270, 300, 270, 400, duration_ms=1000)
-
-        result = research_try(itr=10)
-
-        if result == True :
-            time.sleep(1)
-            return True
-        else :
-            self.back()
-            time.sleep(1)
-
-
-
-
-
-        
-
-        
-
-        
-  
 
     def build_city_new(self, building) :
 
@@ -873,12 +1342,6 @@ class ADB:
             self.tap(305,335) # 건물 2
         time.sleep(2*self.time)
 
-        if self.solve_resource() == True :
-            if building == 1 :
-                self.tap(305,285) # 건물 1
-            elif building == 2 :
-                self.tap(305,335) # 건물 2
-            
 
 
         # ====================
@@ -941,10 +1404,11 @@ class ADB:
         if x != 0 and y != 0 :
             self.tap(x, y)
             time.sleep(1*self.time)
-            if self.solve_resource() == True :
-                self.tap(x, y)
-                time.sleep(1*self.time)
             self.tap(390,750)
+            time.sleep(1*self.time)
+            if self.solve_resource() == True :
+                self.tap(390,750)
+                time.sleep(1*self.time)
             time.sleep(2)
             abnormal = self.check_abnormal()
             if abnormal == False :
@@ -974,21 +1438,6 @@ class ADB:
             time.sleep(2*self.time)
             if upgrade_button(self) :
                 return True
-        # ====================
-        # ====================
-
-
-
-
-
-
-
-
-  
-        
-
-
-
 
     def build_city(self, building) :
 
@@ -1258,12 +1707,6 @@ class ADB:
             time.sleep(3)
             self.tap(270,330) # 도움 버튼
 
-
-
-
-
-
-
     def unit_training(self, unit) :
 
         def check_msg(msg, x_min, x_max, y_min, y_max, y_threshold, scale):
@@ -1310,38 +1753,169 @@ class ADB:
         self.back()
         time.sleep(1)
 
+    def research(self) :
+
+
+        def research_try(itr=3) :
+
+            for attempt in range(itr):
+
+                self.screen_shot(name="_research")
+
+                result = self.get_ocr_raw_advanced(file_name="capture_research.png", x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, binary_threshold=170)
+                processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=115, y_max=950, y_threshold=10, scale=3, merge=False)
+
+                position = pattern_search(processed_result)
+
+                # print("========== 연구 큐 인식   ==========")
+                # print(processed_result)
+                # print("================================")
+                # print(position)
+                # print("================================")
+
+                if position == [] :
+                    self.drag_with_adb(270, 500, 270, 450, duration_ms=500)
+                    time.sleep(1)
+                    continue
+
+                for x, y in position:
+
+                    print(x, y)
+
+                    if x != 0 and y != 0:
+                        self.tap(x, y)
+                        time.sleep(1)
+
+                        self.screen_shot(name="_research_check")
+                        result = self.get_ocr_raw_advanced(file_name="capture_research_check.png", x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, binary_threshold=170)
+                        processed_result = self.process_ocr(result=result, x_min=310, x_max=510, y_min=650, y_max=850, y_threshold=10, scale=3, merge=False)
+                        
+
+                        x_check = 0
+                        y_check = 0
+                        button_flag = False
+
+                        for item in processed_result:
+                            if "연구" in str(item[0]):
+                                x_check = item[1]
+                                y_check = item[2]
+                                button_flag = True
+                                break
+
+                        if button_flag == False:
+                            self.screen_shot(name="_research_state")
+                            result = self.get_ocr_raw_advanced(file_name="capture_research_state.png", x_min=65, x_max=230, y_min=5, y_max=45, y_threshold=10, scale=3, binary_threshold=170)
+                            processed_result = self.process_ocr(result=result, x_min=65, x_max=230, y_min=5, y_max=45, y_threshold=10, scale=3, merge=False)
+                            flag = False
+                            for item in processed_result:
+                                if "과학" in str(item[0]):
+                                    flag = True
+                                    break
+                            if flag == False :
+                                time.sleep(1)
+                                self.back()
+                            
+                        elif button_flag == True:
+                            # print("========== 연구 버튼 인식 ==========")
+                            # print(processed_result)
+                            # print(x_check, y_check)
+                            # print("================================")
+
+                            self.tap(x_check, y_check)  # 연구 버튼
+                            time.sleep(1)
+
+                            if self.solve_resource() == True :
+                                self.tap(x_check, y_check)  # 연구 버튼
+                                time.sleep(1)
+                                    
+                            self.tap(455, 895)  # 연맹 협조
+                            time.sleep(1)
+                            self.back()
+                            time.sleep(1)
+                            print(f"adb{self.itr} 과학기술 연구 시작 (시도 {attempt+1})")
+                            return True
+
+                time.sleep(1)
+                self.drag_with_adb(270, 500, 270, 450, duration_ms=500)
+                time.sleep(1)
+
+            return False
+        
+
+        def pattern_search(processed_result) :
+
+            position = []
+
+            x = 0
+            y = 0
+            pattern = r"^\d+/\d+$"
+            for item in processed_result:
+                if re.match(pattern, item[0].replace(" ", "")):
+                    x = item[1]
+                    y = item[2]
+                    position.append([x, y])
+
+            return position
 
 
 
 
+        self.tap(10,415)
+        time.sleep(2)
+        self.tap(305,610) # 과학기술 연구
+        time.sleep(3)
+        self.tap(360,550) # 연구 버튼
+        time.sleep(2)
 
 
-    def troops_back(self):
+        # self.drag_with_adb(270, 400, 270, 600, duration_ms=500)
+        time.sleep(1)
 
-        def check_msg(msg, x_min, x_max, y_min, y_max, y_threshold, scale):
-            self.screen_shot(name="_barracks_button")
-            result = self.get_ocr_raw(
-                file_name="capture_barracks_button.png",
-                x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
-                y_threshold=y_threshold, scale=scale
-            )
-            processed_result = self.process_ocr(
-                result=result, x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
-                y_threshold=y_threshold, scale=scale
-            )
-            return any(msg in item[0] for item in processed_result)
+        result = research_try()
 
-        y_coords = [200, 245, 290, 335]
-        for y in y_coords:
-            self.tap(165, y)
+        if result == True :
             time.sleep(1)
-            result = check_msg("행군", 215, 330, 230, 275, 10, 3)
-            if result:
-                self.back()
-            else:
-                self.tap(385, 590)
+            return True
+        else :
             time.sleep(1)
+            self.tap(100,85)
+            time.sleep(1)
+            self.drag_with_adb(270, 300, 270, 400, duration_ms=300)
 
+        result = research_try()
+
+        if result == True :
+            time.sleep(1)
+            return True
+        else :
+            time.sleep(1)
+            self.tap(270,85)
+            time.sleep(1)
+            self.drag_with_adb(270, 300, 270, 400, duration_ms=300)
+
+        result = research_try()
+
+        if result == True :
+            time.sleep(1)
+            return True
+        else :
+            time.sleep(1)
+            self.tap(440,85)
+            time.sleep(1)
+            self.drag_with_adb(270, 300, 270, 400, duration_ms=1000)
+            time.sleep(1)
+            self.drag_with_adb(270, 300, 270, 400, duration_ms=1000)
+            time.sleep(1)
+            self.drag_with_adb(270, 300, 270, 400, duration_ms=1000)
+
+        result = research_try(itr=10)
+
+        if result == True :
+            time.sleep(1)
+            return True
+        else :
+            self.back()
+            time.sleep(1)
 
     def resource_remain(self) :
 
@@ -1399,110 +1973,6 @@ class ADB:
 
 
         return bread_value, wood_value, stone_value, iron_value
-
-
-    def hunting2(self, level=2) :
-
-        self.tap(35,660) # 서치버튼
-
-        time.sleep(1*self.time)
-
-        self.drag_with_adb(30, 685, 510, 685, duration_ms=1000)
-        time.sleep(1*self.time)
-
-        self.tap(190,675) # 괴수
-        time.sleep(1*self.time)
-
-
-        for _ in range(level+1):
-            self.tap(50,790) # 한단계 낮추기
-            time.sleep(1*self.time)
-        for _ in range(level-1):
-            self.tap(365,790) # 한단계 높이기
-            time.sleep(1*self.time)
-
-        self.tap(270,910) # 검색
-        time.sleep(5*self.time)
-
-        self.tap(270,365) # 집결
-        time.sleep(1*self.time)
-
-        self.tap(270,620) # 집결 시작
-        time.sleep(1*self.time)
-
-        self.screen_shot(name="_allocation")
-        result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
-        processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
-
-
-        flag = 0
-        for item in processed_result:
-            if "균등" in item[0] or "배치" in item[0] :
-                self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
-                time.sleep(1*self.time)
-                self.tap(410,910) # 출정
-                time.sleep(2*self.time)
-                return True
-            if "비례" in item[0] :
-                flag = 1
-
-        if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
-            self.tap(220,890) # 균등배치
-        elif flag == 1 : # 비례라는 단어가 탐지된 경우
-            self.tap(150,890) # 균등배치
-        time.sleep(1*self.time)
-        self.tap(410,910) # 출정
-        time.sleep(2*self.time)
-
-
-
-    def hunting(self) :
-
-        # 한단계 높여서 안됐을 시 코드 추가필요
-
-        self.tap(35,660) # 서치버튼
-
-        time.sleep(1*self.time)
-
-        self.tap(70,675) # 야수
-        time.sleep(1*self.time)
-
-        self.tap(365,790) # 한단계 높이기
-        time.sleep(1*self.time)
-        self.tap(270,910) # 검색
-        time.sleep(5*self.time)
-
-        self.tap(270,470) # 공격
-        time.sleep(1*self.time)
-
-        self.screen_shot(name="_allocation")
-        result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
-        processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
-
-
-        flag = 0
-        for item in processed_result:
-            if "균등" in item[0] or "배치" in item[0] :
-                self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
-                time.sleep(1*self.time)
-                self.tap(410,910) # 출정
-                time.sleep(2*self.time)
-                return True
-            if "비례" in item[0] :
-                flag = 1
-
-        if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
-            self.tap(220,890) # 균등배치
-        elif flag == 1 : # 비례라는 단어가 탐지된 경우
-            self.tap(150,890) # 균등배치
-        time.sleep(1*self.time)
-        self.tap(410,910) # 출정
-        time.sleep(2*self.time)
-
-        
-
-
-
 
     def resource_farming(self, resource) :
 
@@ -1598,437 +2068,6 @@ class ADB:
             self.tap(410,910) # 출정
             time.sleep(2*self.time)
 
-
-        
-
-
-        
-
-
-    def get_hero(self) :
-
-        self.tap(10,415)
-        time.sleep(1)
-        self.drag_with_adb(170, 525, 170, 275, duration_ms=500) # 625 -> 525
-        time.sleep(0.5)
-        self.drag_with_adb(170, 525, 170, 275, duration_ms=500) # 625 -> 525
-        time.sleep(0.5)
-        self.screen_shot(name="_hero")
-
-        result = self.get_ocr_raw(file_name="capture_hero.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
-        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
-
-        processed_result
-
-
-        target_avg = None  # 결과를 담을 변수
-
-        for i in range(len(processed_result) - 1):
-            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
-            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
-
-            if "고급모" in curr_text and "무료모" in next_text:
-                curr_val = float(processed_result[i][2])      # 고급모집의 2번 인덱스
-                print(curr_val)
-                next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
-                target_avg = (curr_val + next_val) / 2.0
-                self.tap(305, target_avg) # 모집 버튼 누르기
-                time.sleep(1)
-                self.tap(150, 630) # 고급 모집 버튼 누르기
-                time.sleep(10) # 뽑기 애니메이션 기다림림
-                self.back()
-                time.sleep(1)
-                self.back()
-                print(f"adb{self.itr} 고급 모집 완료")
-                break
-            elif "에픽모" in curr_text and "무료모" in next_text:
-                curr_val = float(processed_result[i][2])      # 에픽픽모집의 2번 인덱스
-                print(curr_val)
-                next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
-                target_avg = (curr_val + next_val) / 2.0
-                self.tap(305, target_avg) # 모집 버튼 누르기
-                time.sleep(1)
-                self.tap(150, 900) # 고급 모집 버튼 누르기
-                time.sleep(10) # 뽑기 애니메이션 기다림림
-                self.back()
-                time.sleep(1)
-                self.back()
-                print(f"adb{self.itr} 에픽 모집 완료")
-                break
-
-        time.sleep(1)
-        self.tap(355,415) # 영웅 창 닫기
-
-
-    def heal(self) :
-
-        self.screen_shot(name="_heal")
-
-        img_path = f"{self.base}\\{self._f('capture_heal.png')}"
-        img = cv2.imread(img_path)
-        img_g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        img_e = cv2.Canny(img_g, 80, 160)
-
-        template_dir = os.path.join(os.getcwd(), "template")
-        template_files = ["heal_template1.png"]  # 비교할 템플릿들
-        threshold = 0.55
-
-        detections = []  # (template_name, cx, cy, score)
-
-        for name in template_files:
-            tpl_path = os.path.join(template_dir, name)
-            tpl = cv2.imread(tpl_path)
-            if tpl is None:
-                print(f"[WARN] 템플릿 로드 실패: {tpl_path}")
-                continue
-
-            tpl_g = cv2.cvtColor(tpl, cv2.COLOR_BGR2GRAY)
-            tpl_e = cv2.Canny(tpl_g, 80, 160)
-
-            res = cv2.matchTemplate(img_e, tpl_e, cv2.TM_CCOEFF_NORMED)
-            ys, xs = np.where(res >= threshold)
-
-            w, h = tpl.shape[1], tpl.shape[0]
-            for x, y in zip(xs, ys):
-                cx = x + w // 2
-                cy = y + h // 2
-                score = float(res[y, x])
-                detections.append((name, cx, cy, score))
-
-        # 점수 높은 순으로 보기
-        detections.sort(key=lambda x: x[3], reverse=True)
-
-        # 아무것도 없을 경우
-        if detections == [] : 
-            time.sleep(1)
-            return False
-        # 힐 버튼 클릭
-        else :
-            self.tap(detections[0][1], detections[0][2])
-            time.sleep(1)
-
-        self.screen_shot(name="_heal")
-
-        result = self.get_ocr_raw(file_name="capture_heal.png", x_min=365, x_max=415, y_min=670, y_max=705, y_threshold=10, scale=3)
-        processed_result = self.process_ocr(result=result, x_min=365, x_max=415, y_min=670, y_max=705, y_threshold=10, scale=3, merge=True)
-
-        has_heal = any("치료" in str(item[0]) for item in processed_result)
-        
-        if has_heal == True :
-            self.tap(390,700)
-            time.sleep(1)
-            self.tap(390,700)
-            time.sleep(1)
-            self.back()
-
-
-
-
-
-
-
-
-    def get_supply(self) :
-
-        self.tap(10,415)
-        time.sleep(1)
-        self.drag_with_adb(170, 625, 170, 275, duration_ms=500) # 625 -> 525
-        time.sleep(0.5)
-        self.drag_with_adb(170, 625, 170, 275, duration_ms=500) # 625 -> 525
-        time.sleep(0.5)
-        self.screen_shot(name="_supply")
-
-        result = self.get_ocr_raw(file_name="capture_supply.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
-        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
-
-        processed_result
-
-        target_avg = None  # 결과를 담을 변수
-
-        for i in range(len(processed_result) - 1):
-            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
-            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
-
-            if ("창고" in curr_text or "보급" in curr_text) and "완료" in next_text:
-                curr_val = float(processed_result[i][2])      # y좌표
-                print(curr_val)
-                next_val = float(processed_result[i + 1][2])  # y좌표
-                target_avg = (curr_val + next_val) / 2.0
-                self.tap(305, target_avg) # 보급품 수령 버튼튼
-                time.sleep(1)
-                self.tap(270,420)
-                time.sleep(1)
-                self.tap(275,345) # 수령 버튼
-                time.sleep(10)
-                self.tap(270,420)
-                print(f"adb{self.itr} 보급품 수령 완료")
-                break
-
-
-        time.sleep(1)
-        self.tap(355,415) # 영웅 창 닫기
-        time.sleep(1)
-
-        self.tap(275,345) # 고기
-        time.sleep(1)
-        self.tap(270,715)
-        time.sleep(3)
-
-
-        # self.tap(190,110) # 치료소 클릭
-        # time.sleep(3)
-        # self.tap(390,55) # 치료
-        # time.sleep(1)
-        # self.tap(435,900) # 치료
-        # time.sleep(1)
-        # self.tap(370,325) # 도움 요청
-
-
-
-
-
-    def union_reward(self) :
-
-        self.tap(400, 920) # 연맹 버튼 누르기
-        time.sleep(3)
-        self.tap(430, 500) # 연맹 보물 상자
-        time.sleep(1)
-        self.tap(160, 305) # 전리품 보물상자
-        time.sleep(1)
-        self.tap(270, 905) # 일괄 수령
-        time.sleep(3)
-        self.tap(270, 905) # 일괄 수령
-        time.sleep(1)
-        self.tap(405, 305) # 연맹원 선물
-        time.sleep(1)
-        self.tap(455, 480) # 연맹원 선물
-        time.sleep(1)
-        self.tap(455, 480) # 연맹원 선물
-        time.sleep(1)
-        self.back()
-        time.sleep(1)
-        self.back()
-        time.sleep(1)
-
-
-
-
-    def union_hunt(self) :
-
-        self.tap(400, 920) # 연맹 버튼 누르기
-        time.sleep(3)
-        self.tap(150,500) # 연맹 전쟁
-        time.sleep(1)
-        self.tap(100,900) # 집결결
-        time.sleep(1)
-        self.tap(270,920) # 자동 참여
-        time.sleep(2)
-        self.tap(360,745) # 켜기
-        time.sleep(1)
-        self.back()
-        time.sleep(1)
-        self.back()
-        time.sleep(1)
-        self.back()
-        time.sleep(1)
-
-
-
-
-    def union_research(self) :
-
-        self.tap(10,415)
-        time.sleep(1)
-        self.drag_with_adb(170, 625, 170, 275, duration_ms=800)
-        time.sleep(1)
-        self.screen_shot(name="_union_research")
-
-        result = self.get_ocr_raw(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
-        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
-
-
-        target_avg = None  # 결과를 담을 변수
-
-        for i in range(len(processed_result) - 1):
-            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
-            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
-
-            if "기부" in curr_text and "가능" in next_text:
-                curr_val = float(processed_result[i][2])      # 고급모집의 2번 인덱스
-                next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
-                target_avg = (curr_val + next_val) / 2.0
-                self.tap(300, target_avg) # 연맹 기부 버튼 누르기
-                time.sleep(1)
-                self.tap(400, 920) # 연맹 버튼 누르기
-                time.sleep(3)
-                self.tap(420, 700) # 연맹 과학 기술 버튼 누르기
-                time.sleep(0.5)
-                break
-            else :
-                pass
-        else:
-            self.tap(355,415)
-            return False
-
-
-        time.sleep(1)
-        self.tap(510,530)
-        time.sleep(1)
-
-        self.screen_shot(name="_union_research_queue")
-
-        result = self.get_ocr_raw_advanced(file_name="capture_union_research_queue.png", x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, binary_threshold=170)
-        processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, merge=False)
-
-        pattern = r"^\d+/\d+$"
-        for item in processed_result:
-
-            x = 0
-            y = 0
-
-            if re.match(pattern, item[0].replace(" ", "")):
-
-                x = item[1]
-                y = item[2]
-
-                if x != 0 and y != 0 :
-                    self.tap(x,y)
-                    time.sleep(1)
-
-                    self.screen_shot(name="_union_done")
-                    result = self.get_ocr_raw_advanced(file_name="capture_union_done.png", x_min=295, x_max=475, y_min=690, y_max=820, y_threshold=10, scale=3, binary_threshold=170)
-                    processed_result = self.process_ocr(result=result, x_min=295, x_max=475, y_min=690, y_max=820, y_threshold=10, scale=3, merge=False)
-
-                    for item in processed_result:
-                        if "기부" in str(item[0]):
-                            x = item[1]
-                            y = item[2]
-                            for _ in range(10):
-                                self.tap(385,765) # 기부 버튼
-                                time.sleep(0.5)
-                            self.back()
-                            time.sleep(1)
-                            self.back()
-                            print(f"adb{self.itr} 연맹 연구 기여 완료")
-                            return True
-                    else :
-                        self.back()
-                        time.sleep(1)
-
-
-
-
-
-
-
-
-
-
-    def get_quest(self) :
-
-        for _ in range(20) :
-
-            flag = False
-
-            self.tap(30,790) # 퀘스트 버튼
-            time.sleep(1)
-            self.screen_shot(name="_quest")
-
-            result = self.get_ocr_raw(file_name="capture_quest.png", x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=3)
-            processed_result = self.process_ocr(result=result, x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=3, merge=True)
-            print(processed_result)
-
-            for item in processed_result:
-                if item[0] == "수령":
-                    x = item[1]
-                    y = item[2]
-                    self.tap(x,y)
-                    time.sleep(1)
-                    flag = True
-                    break 
-
-            self.back() # 아무것도 수령할거 없는 경우
-            time.sleep(1)
-
-            self.check_abnormal()
-            time.sleep(1)
-
-            if flag == False:
-                break
-
-
-
-
-    def get_people(self) :
-
-        self.tap(470,610)
-        time.sleep(1)
-        self.screen_shot(name="_people")
-
-        result = self.get_ocr_raw(file_name="capture_people.png", x_min=210, x_max=330, y_min=820, y_max=860, y_threshold=10, scale=1)
-        processed_result = self.process_ocr(result=result, x_min=210, x_max=330, y_min=820, y_max=860, y_threshold=10, scale=1, merge=True)
-
-        if processed_result :
-            self.tap(270,840)
-            time.sleep(5)
-
-
-    def read_letter(self) :
-
-        self.tap(500,785)
-        time.sleep(1)
-        self.tap(420,930)
-        time.sleep(1)
-        self.back()
-        time.sleep(1)
-        self.back()
-
-
-    def read_all_letter(self) :
-
-        self.tap(500,785)
-        time.sleep(1)
-
-        self.tap(170,80) # 연맹맹
-        time.sleep(1)
-        self.tap(420,930) # 일괄 읽기
-        time.sleep(2)
-        self.tap(270,80) # 시스템
-        time.sleep(1)
-
-        self.tap(270,80) # 시스템
-        time.sleep(1)
-        self.tap(420,930) # 일괄 읽기
-        time.sleep(2)
-        self.tap(270,80) # 시스템
-        time.sleep(1)
-
-        self.tap(375,80) # 보고
-        time.sleep(1)
-        self.tap(420,930) # 일괄 읽기
-        time.sleep(2)
-        self.tap(270,80) # 시스템
-        time.sleep(1)
-
-        self.back()
-        time.sleep(1)
-
- 
-
-
-
-
-    def get_VIP(self) :
-
-        self.tap(490,60)
-        time.sleep(2)
-        self.tap(470,215)
-        time.sleep(2)
-        self.back()
-        time.sleep(1)
-
-
-
     def hunt_event(self) :
 
         self.tap(500, 710)
@@ -2106,9 +2145,13 @@ class ADB:
 
             # 보상 체크인 경우
             if any("이벤" in str(row[0]) or "벤트" in str(row[0]) for row in processed_result):
+                self.runtime_write("stamina", max(0, int(self.runtime_read("stamina", 0)) - 12))
                 self.back()
                 time.sleep(1)
-                return self.hunt_event()
+                if self.runtime_read("stamina", 0) < 15:
+                    return False
+                else :
+                    return self.hunt_event()
 
             # 주점토벌로 넘어간 경우
             result = self.get_ocr_raw_advanced(file_name="capture_hunt_state_check.png", x_min=360, x_max=440, y_min=885, y_max=925, y_threshold=10, scale=3, gamma=0.8, use_binary=False)
@@ -2116,11 +2159,15 @@ class ADB:
 
             # 주점 토벌인 경우
             if any("전투" in str(row[0]) for row in processed_result):
+                self.runtime_write("stamina", max(0, int(self.runtime_read("stamina", 0)) - 12))
                 self.tap(400,900)
                 time.sleep(25)
                 self.tap(400,900)
                 time.sleep(1)
-                return self.hunt_event()
+                if self.runtime_read("stamina", 0) < 15:
+                    return False
+                else :
+                    return self.hunt_event()
 
 
 
@@ -2162,342 +2209,374 @@ class ADB:
                 time.sleep(2)
                 return True
 
+    def hunting2(self, level=2) :
 
+        self.tap(35,660) # 서치버튼
+
+        time.sleep(1*self.time)
+
+        self.drag_with_adb(30, 685, 510, 685, duration_ms=1000)
+        time.sleep(1*self.time)
+
+        self.tap(190,675) # 괴수
+        time.sleep(1*self.time)
+
+
+        for _ in range(level+1):
+            self.tap(50,790) # 한단계 낮추기
+            time.sleep(1*self.time)
+        for _ in range(level-1):
+            self.tap(365,790) # 한단계 높이기
+            time.sleep(1*self.time)
+
+        self.tap(270,910) # 검색
+        time.sleep(5*self.time)
+
+        self.tap(270,365) # 집결
+        time.sleep(1*self.time)
+
+        self.tap(270,620) # 집결 시작
+        time.sleep(1*self.time)
+
+        self.screen_shot(name="_allocation")
+        result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
+
+
+        flag = 0
+        for item in processed_result:
+            if "균등" in item[0] or "배치" in item[0] :
+                self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
+                time.sleep(1*self.time)
+                self.tap(410,910) # 출정
+                time.sleep(2*self.time)
+                return True
+            if "비례" in item[0] :
+                flag = 1
+
+        if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
+            self.tap(220,890) # 균등배치
+        elif flag == 1 : # 비례라는 단어가 탐지된 경우
+            self.tap(150,890) # 균등배치
+        time.sleep(1*self.time)
+        self.tap(410,910) # 출정
+        time.sleep(2*self.time)
+
+    def hunting(self) :
+
+        # 한단계 높여서 안됐을 시 코드 추가필요
+
+        self.tap(35,660) # 서치버튼
+
+        time.sleep(1*self.time)
+
+        self.tap(70,675) # 야수
+        time.sleep(1*self.time)
+
+        self.tap(365,790) # 한단계 높이기
+        time.sleep(1*self.time)
+        self.tap(270,910) # 검색
+        time.sleep(5*self.time)
+
+        self.tap(270,470) # 공격
+        time.sleep(1*self.time)
+
+        self.screen_shot(name="_allocation")
+        result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
+
+
+        flag = 0
+        for item in processed_result:
+            if "균등" in item[0] or "배치" in item[0] :
+                self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
+                time.sleep(1*self.time)
+                self.tap(410,910) # 출정
+                time.sleep(2*self.time)
+                return True
+            if "비례" in item[0] :
+                flag = 1
+
+        if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
+            self.tap(220,890) # 균등배치
+        elif flag == 1 : # 비례라는 단어가 탐지된 경우
+            self.tap(150,890) # 균등배치
+        time.sleep(1*self.time)
+        self.tap(410,910) # 출정
+        time.sleep(2*self.time)
+
+    def heal(self) :
+
+        self.screen_shot(name="_heal")
+
+        img_path = f"{self.base}\\{self._f('capture_heal.png')}"
+        img = cv2.imread(img_path)
+        img_g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img_e = cv2.Canny(img_g, 80, 160)
+
+        template_dir = os.path.join(os.getcwd(), "template")
+        threshold = 0.55
+
+        def detect_template(name):
+            detections = []  # (template_name, cx, cy, score)
+            tpl_path = os.path.join(template_dir, name)
+            tpl = cv2.imread(tpl_path)
+            if tpl is None:
+                print(f"[WARN] 템플릿 로드 실패: {tpl_path}")
+                return detections
+
+            tpl_g = cv2.cvtColor(tpl, cv2.COLOR_BGR2GRAY)
+            tpl_e = cv2.Canny(tpl_g, 80, 160)
+
+            res = cv2.matchTemplate(img_e, tpl_e, cv2.TM_CCOEFF_NORMED)
+            ys, xs = np.where(res >= threshold)
+
+            w, h = tpl.shape[1], tpl.shape[0]
+            for x, y in zip(xs, ys):
+                cx = x + w // 2
+                cy = y + h // 2
+                score = float(res[y, x])
+                detections.append((name, cx, cy, score))
+
+            detections.sort(key=lambda x: x[3], reverse=True)
+            return detections
+
+        # heal_template2를 우선 검사하고, 하나라도 탐지되면 즉시 종료
+        detections = detect_template("heal_template2.png")
+        if detections != []:
+            return 10
+
+        # heal_template2가 없을 때만 heal_template1 검사
+        detections = detect_template("heal_template1.png")
+
+        # 아무것도 없을 경우
+        if detections == [] : 
+            time.sleep(1)
+            return False
+        # 힐 버튼 클릭
+        else :
+            self.tap(detections[0][1], detections[0][2])
+            time.sleep(1)
+
+        self.screen_shot(name="_heal")
+
+        result = self.get_ocr_raw(file_name="capture_heal.png", x_min=365, x_max=415, y_min=670, y_max=705, y_threshold=10, scale=3)
+        processed_result = self.process_ocr(result=result, x_min=365, x_max=415, y_min=670, y_max=705, y_threshold=10, scale=3, merge=True)
+
+        has_heal = any("치료" in str(item[0]) for item in processed_result)
+        
+        if has_heal == True :
+            self.tap(390,700)
+            time.sleep(1)
+            self.tap(390,700)
+            time.sleep(1)
+            self.back()
+
+        return True
+
+    def troops_back(self):
+
+        def check_msg(msg, x_min, x_max, y_min, y_max, y_threshold, scale):
+            self.screen_shot(name="_barracks_button")
+            result = self.get_ocr_raw(
+                file_name="capture_barracks_button.png",
+                x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
+                y_threshold=y_threshold, scale=scale
+            )
+            processed_result = self.process_ocr(
+                result=result, x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
+                y_threshold=y_threshold, scale=scale
+            )
+            return any(msg in item[0] for item in processed_result)
+
+        y_coords = [200, 245, 290, 335]
+        for y in y_coords:
+            self.tap(165, y)
+            time.sleep(1)
+            result = check_msg("행군", 215, 330, 230, 275, 10, 3)
+            if result:
+                self.back()
+            else:
+                self.tap(385, 590)
+            time.sleep(1)
+
+
+
+    def shield(self) :
+
+        self.tap(25,90)
+        time.sleep(1)
+        self.tap(275,185)
+        time.sleep(1)
+        self.tap(440,310)
+        self.back()
+        # 쉴드가 이미 걸려있을 경우 back을 한번 더눌러야하는데 추후 코드 수정정
+
+
+    def unit_action(self, x, y, mod, human_attack=False) :
+
+        def _update_global_unit_coords(add=True):
+            state = load_runtime_state()
+            coords = state.get("unit_action_coords", [])
+            if not isinstance(coords, list):
+                coords = []
+
+            coord_x, coord_y = str(x), str(y)
+            if add:
+                now_ts = int(time.time())
+                coords = [
+                    c for c in coords
+                    if not (
+                        isinstance(c, dict)
+                        and str(c.get("x")) == coord_x
+                        and str(c.get("y")) == coord_y
+                    )
+                ]
+                coords.append({"x": coord_x, "y": coord_y, "time": now_ts})
+            else:
+                coords = [
+                    c for c in coords
+                    if not (
+                        isinstance(c, dict)
+                        and str(c.get("x")) == coord_x
+                        and str(c.get("y")) == coord_y
+                    )
+                ]
+
+            state["unit_action_coords"] = coords
+            save_runtime_state(state)
+
+        if self.heal() > 0 :
+            return 5
+
+        if mod == "move" :
+            text = "점령"
+        elif mod == "back" :
+            text = "소환"
+        elif mod == "attack" :
+            text = "공격"
+        elif mod == "back_all" :
+            text = "철수"
+
+        self.tap(160,800) # 좌표 검색
+        time.sleep(1)
+        self.tap(185,470)
+        time.sleep(1)
+        self.typing_number(f"bbbbb{x}e")
+        self.tap(385,470)
+        time.sleep(1)
+        self.typing_number(f"bbbbb{y}e")
+        time.sleep(1)
+        self.tap(270,565)
+        time.sleep(1)
+        self.tap(270,480) # 땅 클릭
+        time.sleep(1)
+
+
+        self.screen_shot(name="_military_base")
+        time.sleep(1)
 
         
+        ocr_result = self.get_ocr_raw(file_name="capture_military_base.png", x_min=5, x_max=185, y_min=175, y_max=540, y_threshold=10, scale=1)
+        processed_result = self.process_ocr(result=ocr_result, x_min=5, x_max=185, y_min=175, y_max=540, y_threshold=10, scale=1, merge=False)
+
+        if mod == "back_all" :
+            for item in processed_result :
+                if "주둔" in item[0] :
+                    self.tap(165, item[2])
+                    time.sleep(1)
+                    self.tap(385,590) # 소환 확인
+        
+            return 10
+
+        if mod == "attack" or mod == "move":
+            for item in processed_result :
+                # 공격나갔는데 이미 주둔중인 병력 있으면 뺌
+                if "주둔" in item[0] and mod == "attack" :
+                    self.unit_action(x=item[1], y=item[2], mod="back_all")
+                    return False
+                # 이동중인 부대가 있음
+                elif (
+                    "복귀" in item[0] 
+                    or "X" in item[0] 
+                    or "Y" in item[0]
+                    or "x" in item[0]
+                    or "y" in item[0]
+                ):
+                    return 20
+        
+
+        ocr_result = self.get_ocr_raw(file_name="capture_military_base.png", x_min=115, x_max=425, y_min=475, y_max=810, y_threshold=10, scale=1)
+        processed_result = self.process_ocr(result=ocr_result, x_min=115, x_max=425, y_min=475, y_max=810, y_threshold=10, scale=1, merge=False)
 
 
-
-    def screen_shot(self, name="") :
-        local_name = self._f(f"capture{name}.png")
-        dest_path = f"{self.base}\\{local_name}"
-        command = f'{self.adb_path} -s {self.device_id} shell screencap -p /sdcard/Pictures/Screenshots/capture{name}.png'
-        self.shell(command)
-        command = f'{self.adb_path} -s {self.device_id} pull /sdcard/Pictures/Screenshots/capture{name}.png "{dest_path}"'
-        self.shell(command)
-
-
-
-    def crop_image(self, file_name="capture.png", x_min=0, x_max=480, y_min=0, y_max=1000) :
-        img_path = f"{self.base}\\{self._f(file_name)}"
-        image = cv2.imread(img_path)
-        cropped_image = image[y_min:y_max, x_min:x_max]
-        cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
-        cv2.imwrite(cropped_img_path, cropped_image)
-        return cropped_image
-
-
-    def compare_inout(self, cropped_file_name="cropped_capture_inout.png", in_ref="in.png", out_ref="out.png"):
-        """크롭된 이미지가 in.png에 더 가까운지 out.png에 더 가까운지 판단. 'in' 또는 'out' 반환. 참조 이미지는 코드 실행 경로에서 로드."""
-        crop = cv2.imread(f"{self.base}\\{self._f(cropped_file_name)}")
-        in_img = cv2.imread(in_ref)
-        out_img = cv2.imread(out_ref)
-        if crop is None:
-            raise FileNotFoundError(f"Cropped image not found: {cropped_file_name}")
-        if in_img is None or out_img is None:
-            raise FileNotFoundError(f"Reference images not found: {in_ref}, {out_ref} (실행 경로: {os.getcwd()})")
-        # 크기 맞추기 (참조 이미지 크기에 맞춤)
-        h, w = in_img.shape[:2]
-        crop = cv2.resize(crop, (w, h), interpolation=cv2.INTER_LINEAR)
-        out_img = cv2.resize(out_img, (w, h), interpolation=cv2.INTER_LINEAR)
-        # 유사도: MSE가 작을수록 더 유사
-        mse_in = np.mean((crop.astype(float) - in_img.astype(float)) ** 2)
-        mse_out = np.mean((crop.astype(float) - out_img.astype(float)) ** 2)
-        return "in" if mse_in <= mse_out else "out"
-
-    def matches_reference(self, cropped_file_name, reference_name="reconnect.png", mse_threshold=800):
-        """크롭된 이미지가 참조 이미지와 일치하는지 판단. MSE가 threshold 이하면 True. 참조 이미지는 코드 실행 경로에서 로드."""
-        crop = cv2.imread(f"{self.base}\\{self._f(cropped_file_name)}")
-        ref = cv2.imread(reference_name)
-        if crop is None:
-            raise FileNotFoundError(f"Cropped image not found: {cropped_file_name}")
-        if ref is None:
-            raise FileNotFoundError(f"Reference image not found: {reference_name} (실행 경로: {os.getcwd()})")
-        h, w = ref.shape[:2]
-        crop = cv2.resize(crop, (w, h), interpolation=cv2.INTER_LINEAR)
-        mse = np.mean((crop.astype(float) - ref.astype(float)) ** 2)
-        return mse <= mse_threshold
-
-    def check_reconnect(self, mse_threshold=800, min_interval_sec=8.0, force=False) :
-        now = time.time()
-        if (not force) and (now - self._last_reconnect_check_ts < min_interval_sec):
-            return self._last_reconnect_check_result
-
-        self.screen_shot(name="_reconnect")
-        self.crop_image(file_name="capture_reconnect.png", x_min=50, x_max=490, y_min=320, y_max=630)
-        result = self.matches_reference(
-            cropped_file_name="cropped_capture_reconnect.png",
-            reference_name="reconnect.png",
-            mse_threshold=mse_threshold
-        )
-        self._last_reconnect_check_ts = now
-        self._last_reconnect_check_result = result
-        return result
-
-    def check_help(self, mse_threshold=800, min_interval_sec=2.5, force=False) :
-        now = time.time()
-        if (not force) and (now - self._last_help_check_ts < min_interval_sec):
-            return self._last_help_check_result
-
-        self.screen_shot(name="_help")
-        self.crop_image(file_name="capture_help.png", x_min=375, x_max=430, y_min=825, y_max=875)
-        result = self.matches_reference(
-            cropped_file_name="cropped_capture_help.png",
-            reference_name="help.png",
-            mse_threshold=mse_threshold
-        )
-        self._last_help_check_ts = now
-        self._last_help_check_result = result
-        return result
+        result = None
+        # 배치, 소환, 공격 버튼 누르기기
+        if processed_result:
+            for item in processed_result:
+                # 여기서 걸리면 뭔가 있는 땅임
+                if item[0] in ["채집", "수비"] :
+                    self.back()
+                    time.sleep(1)
+                    return False
+                # 여기서 걸리면 사람임
+                elif item[0] in ["집결", "섬", "방문"] and human_attack == False :
+                    self.back()
+                    time.sleep(1)
+                    return False
+                elif item[0] == text:
+                    # 원하는 기능의 동작 버튼 (ex>배치)
+                    result = (item[1], item[2]-10)
+        
+  
 
 
+        if result is not None :
 
+            self.tap(result[0], result[1])
+            time.sleep(2)
 
-    def get_ocr(self, file_name="capture.png", x_min=0, x_max=480, y_min=0, y_max=1000, y_threshold=10):
-        img_path = f"{self.base}\\{self._f(file_name)}"
-        image = cv2.imread(img_path)
-        if image is None:
-            raise FileNotFoundError(f"Image not found at path: {img_path}")
-        height, width, _ = image.shape
-        cropped_image = image[y_min:y_max, x_min:x_max]
-        cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
-        cv2.imwrite(cropped_img_path, cropped_image)
-        result = self._run_ocr(cropped_img_path)
+            if mod == "back" :
+                self.tap(385,590) # 소환 확인
+                return 2
+            
+            elif mod == "move" :
+                time.sleep(1)
+                self.tap(180,190) # 영웅 취소
+                time.sleep(1)
 
-        # print(result)
+                self.screen_shot(name="_allocation")
+                result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
+                processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
 
-        if result == [None] : # ocr 텍스트 없음조건
-            return [None]
+                flag = 0
+                for item in processed_result:
+                    if "균등" in item[0] or "배치" in item[0] :
+                        self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
+                        time.sleep(1*self.time)
+                        self.tap(410,910) # 출정
+                        time.sleep(2*self.time)
+                        _update_global_unit_coords(add=True)
+                        return True
+                    if "비례" in item[0] :
+                        flag = 1
 
-        # 1. 결과를 Y좌표 기준으로 필터링
-        lines = []
-        for line in result[0]:
-            coords = line[0]  # OCR 좌표
-            text = line[1][0]  # OCR 텍스트
-            x_mean = np.mean([coords[0][0], coords[2][0]])  # X좌표 평균값
-            y_mean = np.mean([coords[0][1], coords[2][1]])  # Y좌표 평균값
+                if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
+                    self.tap(220,890) # 균등배치
+                elif flag == 1 : # 비례라는 단어가 탐지된 경우
+                    self.tap(150,890) # 균등배치
+                time.sleep(1*self.time)
+                self.tap(410,910) # 출정
+                time.sleep(2*self.time)
+                _update_global_unit_coords(add=True)
+            
+            elif mod == "attack" :
+                self.tap(410,910) # 출정
+                _update_global_unit_coords(add=False)
+        else :
+            self.back()
+        return None
 
-            # Y좌표 필터링
-            lines.append({"x_mean": x_mean, "y_mean": y_mean, "text": text})
-
-        # 2. Y좌표 기준으로 정렬
-        lines.sort(key=lambda x: x["y_mean"])
-
-        # 3. Y좌표 차이에 따라 그룹화
-        grouped_lines = []
-        current_line = []
-
-        for item in lines:
-            if not current_line:
-                current_line.append(item)
-            else:
-                # 이전 Y좌표와 비교하여 같은 줄인지 판단
-                if abs(item["y_mean"] - current_line[-1]["y_mean"]) <= y_threshold:
-                    current_line.append(item)
-                else:
-                    # X좌표 기준으로 정렬 후 저장
-                    grouped_lines.append(sorted(current_line, key=lambda x: x["x_mean"]))
-                    current_line = [item]
-
-        # 마지막 줄 추가
-        if current_line:
-            grouped_lines.append(sorted(current_line, key=lambda x: x["x_mean"]))
-
-        # 4. 결과 출력
-        # for line in grouped_lines:
-            # print(" ".join([item["text"] for item in line]))
-
-        return grouped_lines
-    
-
-    def get_ocr_raw(self, file_name="capture.png", x_min=0, x_max=480, y_min=0, y_max=1000, y_threshold=10, scale=3):
-        img_path = f"{self.base}\\{self._f(file_name)}"
-        image = cv2.imread(img_path)
-        if image is None:
-            raise FileNotFoundError(f"Image not found at path: {img_path}")
-        cropped_image = image[y_min:y_max, x_min:x_max]
-        if scale and scale != 1:
-            h, w = cropped_image.shape[:2]
-            cropped_image = cv2.resize(cropped_image, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
-            gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
-            cropped_image = cv2.cvtColor(cv2.equalizeHist(gray), cv2.COLOR_GRAY2BGR)
-        cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
-        cv2.imwrite(cropped_img_path, cropped_image)
-        result = self._run_ocr(cropped_img_path)
-
-        return result
-
-
-    def get_ocr_raw_advanced(
-        self,
-        file_name="capture.png",
-        x_min=0, x_max=480, y_min=0, y_max=1000,
-        y_threshold=10,
-        scale=3,
-        use_clahe=True,
-        clahe_clip_limit=2.0,
-        clahe_tile_grid_size=(8, 8),
-        use_gamma=True,
-        gamma=1.2,
-        use_binary=True,
-        binary_threshold=0,        # 값 
-        binary_inv=True           # 글자를 흰색으로 만들고 싶으면 True
-    ):
-        img_path = f"{self.base}\\{self._f(file_name)}"
-        image = cv2.imread(img_path)
-        if image is None:
-            raise FileNotFoundError(f"Image not found at path: {img_path}")
-        cropped_image = image[y_min:y_max, x_min:x_max]
-        if scale and scale != 1:
-            h, w = cropped_image.shape[:2]
-            cropped_image = cv2.resize(cropped_image, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
-
-        # 1) 그레이 변환
-        gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
-
-        # 2) CLAHE (선택)
-        if use_clahe:
-            clahe = cv2.createCLAHE(clipLimit=clahe_clip_limit, tileGridSize=clahe_tile_grid_size)
-            gray = clahe.apply(gray)
-        else:
-            # 기존 equalizeHist 유지하고 싶으면 여기에서 사용
-            gray = cv2.equalizeHist(gray)
-
-        # 3) 감마 보정 (선택)
-        if use_gamma and gamma != 1.0:
-            inv_gamma = 1.0 / gamma
-            table = (np.array([(i / 255.0) ** inv_gamma * 255 for i in np.arange(0, 256)])
-                    .astype("uint8"))
-            gray = cv2.LUT(gray, table)
-
-        # 4) 이진화 (선택) – 글자를 확실히 흰색/배경 검정으로
-        if use_binary:
-            if binary_threshold == 0:
-                # OTSU 자동 임계값
-                thresh_type = cv2.THRESH_BINARY_INV if binary_inv else cv2.THRESH_BINARY
-                _, gray = cv2.threshold(gray, 0, 255, thresh_type + cv2.THRESH_OTSU)
-            else:
-                thresh_type = cv2.THRESH_BINARY_INV if binary_inv else cv2.THRESH_BINARY
-                _, gray = cv2.threshold(gray, binary_threshold, 255, thresh_type)
-
-        cropped_image = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-
-        cropped_img_path = f"{self.base}\\{self._f('cropped_' + file_name)}"
-        cv2.imwrite(cropped_img_path, cropped_image)
-        result = self._run_ocr(cropped_img_path)
-
-        return result
-    
-
-    def process_ocr(self, result, x_min=0, x_max=480, y_min=0, y_max=1000, y_threshold=10, scale=1, merge=True):
-        if result is None or result == [None] or result[0] is None:
-            return []
-        processed_lines = []
-
-        for block in result[0]:
-            coords = block[0]
-            text = block[1][0]
-            confidence = block[1][1]  # 인식률
-
-            # 업스케일된 이미지로 OCR한 경우: scale로 나눈 뒤 원본 기준으로 보정
-            x_coords = [point[0] / scale + x_min for point in coords]
-            y_coords = [point[1] / scale + y_min for point in coords]
-
-            x_mean = np.mean(x_coords)
-            y_mean = np.mean(y_coords)
-
-            # 각 영역의 x 최소/최대와 y 최소/최대 계산
-            x_left = min(x_coords)
-            x_right = max(x_coords)
-            y_top = min(y_coords)
-            y_bottom = max(y_coords)
-
-            processed_lines.append({
-                "text": text,
-                "x_mean": x_mean,
-                "y_mean": y_mean,
-                "x_left": x_left,
-                "x_right": x_right,
-                "y_top": y_top,
-                "y_bottom": y_bottom,
-                "confidence": confidence
-            })
-
-        # Y좌표 기준으로 정렬
-        processed_lines.sort(key=lambda x: x["y_mean"])
-
-        # mod=False: 병합 없이 블록 단위로 반환
-        if not merge:
-            return [[item["text"], item["x_mean"], item["y_mean"],
-                     item["x_left"], item["x_right"], item["y_top"], item["y_bottom"],
-                     item["confidence"]] for item in processed_lines]
-
-        # 같은 줄 텍스트 병합 (mod=True, 기본)
-        grouped_lines = []
-        current_line = []
-
-        for item in processed_lines:
-            if not current_line:
-                current_line.append(item)
-            else:
-                # 같은 줄인지 확인 (y_threshold 기준)
-                if abs(item["y_mean"] - current_line[-1]["y_mean"]) <= y_threshold:
-                    current_line.append(item)
-                else:
-                    # 병합 후 저장 (X좌표 기준으로 정렬)
-                    grouped_lines.append(sorted(current_line, key=lambda x: x["x_mean"]))
-                    current_line = [item]
-
-        if current_line:
-            grouped_lines.append(sorted(current_line, key=lambda x: x["x_mean"]))
-
-        # 병합된 결과 처리
-        final_output = []
-        for group in grouped_lines:
-            merged_text = " ".join([item["text"] for item in group])
-            x_mean = np.mean([item["x_mean"] for item in group])
-            y_mean = np.mean([item["y_mean"] for item in group])
-            x_left = min([item["x_left"] for item in group])
-            x_right = max([item["x_right"] for item in group])
-            y_top = min([item["y_top"] for item in group])
-            y_bottom = max([item["y_bottom"] for item in group])
-            confidence = np.mean([item["confidence"] for item in group])
-
-            final_output.append([merged_text, x_mean, y_mean, x_left, x_right, y_top, y_bottom, confidence])
-
-        return final_output
-
-
-    def ocr_to_plain(self, ocr) :
-
-        result_text = ""
-
-        for line in ocr:
-            # 각 줄의 텍스트를 공백으로 연결하고 줄바꿈 추가
-            line_text = " ".join([item["text"] for item in line])
-            result_text += line_text + "\n"
-
-        # 마지막 줄바꿈 제거
-        result_text = result_text.strip()
-
-        return result_text    
-
-
-
-    def check_abnormal(self, max_actions=8) :
-        """무한 복구 루프를 막기 위해 최대 반복 횟수 제한."""
-        fixed = False
-        for _ in range(max_actions):
-            state = self.get_state()
-            if state["action"] == False:
-                return fixed
-            fixed = True
-            time.sleep(0.7 * self.time)
-
-        # 반복 상한을 넘기면 강제로 한 번 빠져나와 다음 루프로 넘긴다.
-        self.back()
-        time.sleep(1 * self.time)
-        return True
 
 
         
@@ -2521,7 +2600,7 @@ def init_bluestacks_and_adbs():
 
     # BlueStacks 인스턴스 실행
     commands = [
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_1"],  # 5555
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_1", "--cmd", "launchApp", "--package", "com.run.tower.defense"],  # 5555
         
         # 
         # [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_7"],
@@ -2532,17 +2611,17 @@ def init_bluestacks_and_adbs():
     ]
 
     command_group_a = [
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_12"],
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_13"],
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_14"],
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_12", "--cmd", "launchApp", "--package", "com.run.tower.defense"],
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_13", "--cmd", "launchApp", "--package", "com.run.tower.defense"],
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_14", "--cmd", "launchApp", "--package", "com.run.tower.defense"],
     ]
     command_group_b = [
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_15"],
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_8"],
-        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_9"],
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_15", "--cmd", "launchApp", "--package", "com.run.tower.defense"],
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_8", "--cmd", "launchApp", "--package", "com.run.tower.defense"],
+        [r"C:\\Program Files\\BlueStacks_nxt\\HD-Player.exe", "--instance", "Pie64_9", "--cmd", "launchApp", "--package", "com.run.tower.defense"],
     ]
 
-    toggle_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bluestacks_instance_toggle.txt")
+    toggle_path = os.path.join(get_runtime_base_dir(), "bluestacks_instance_toggle.txt")
     use_group_a = True
     toggle_file_existed = os.path.exists(toggle_path)
     previous_toggle_value = ""
@@ -2604,14 +2683,14 @@ def init_bluestacks_and_adbs():
     for adb in adbs:
         adb.connect()
 
-    for adb in adbs:
-        adb.home()
+    # for adb in adbs:
+    #     adb.home()
 
-    time.sleep(3)
+    # time.sleep(3)
 
-    for adb in adbs:
-        adb.start_kingshot()
-        time.sleep(1)
+    # for adb in adbs:
+    #     adb.start_kingshot()
+    #     time.sleep(1)
 
     time.sleep(12)
 
@@ -2703,6 +2782,101 @@ back_trigger = False
 # 각 adb별로 루프 카운트 (adb마다 5번 돌면 자원 채취)
 loop_count = {}
 shutdown_event = threading.Event()
+RUNTIME_STATE_LOCK = threading.Lock()
+RUNTIME_STATE_PATH = os.path.join(get_runtime_base_dir(), "automation_state.json")
+
+
+def _default_runtime_state():
+    return {"version": 1, "devices": {}}
+
+
+def load_runtime_state():
+    """런타임 상태(JSON)를 읽는다. 파일이 없거나 손상되면 기본값 반환."""
+    try:
+        if not os.path.exists(RUNTIME_STATE_PATH):
+            return _default_runtime_state()
+        with open(RUNTIME_STATE_PATH, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        if not isinstance(state, dict):
+            return _default_runtime_state()
+        if "devices" not in state or not isinstance(state["devices"], dict):
+            state["devices"] = {}
+        if "version" not in state:
+            state["version"] = 1
+        return state
+    except Exception as e:
+        print(f"[경고] runtime state 로드 실패: {e}")
+        return _default_runtime_state()
+
+
+def save_runtime_state(state):
+    """런타임 상태(JSON)를 원자적으로 저장한다."""
+    try:
+        tmp_path = RUNTIME_STATE_PATH + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, RUNTIME_STATE_PATH)
+    except Exception as e:
+        print(f"[경고] runtime state 저장 실패: {e}")
+
+
+class RuntimeStateDB:
+    """JSON 파일을 DB처럼 즉시 read/write 하기 위한 래퍼."""
+    def __init__(self, state_path, lock):
+        self.state_path = state_path
+        self.lock = lock
+
+    def _load(self):
+        try:
+            if not os.path.exists(self.state_path):
+                return _default_runtime_state()
+            with open(self.state_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            if not isinstance(state, dict):
+                return _default_runtime_state()
+            if "devices" not in state or not isinstance(state["devices"], dict):
+                state["devices"] = {}
+            if "version" not in state:
+                state["version"] = 1
+            return state
+        except Exception as e:
+            print(f"[경고] runtime db 로드 실패: {e}")
+            return _default_runtime_state()
+
+    def _save(self, state):
+        try:
+            tmp_path = self.state_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, self.state_path)
+        except Exception as e:
+            print(f"[경고] runtime db 저장 실패: {e}")
+
+    def read(self, device_key, field, default=None):
+        with self.lock:
+            state = self._load()
+            device_state = state.get("devices", {}).get(device_key, {})
+            return device_state.get(field, default)
+
+    def write(self, device_key, field, value):
+        with self.lock:
+            state = self._load()
+            devices = state.setdefault("devices", {})
+            device_state = devices.setdefault(device_key, {})
+            device_state[field] = value
+            self._save(state)
+
+
+runtime_db = RuntimeStateDB(RUNTIME_STATE_PATH, RUNTIME_STATE_LOCK)
+
+
+def get_runtime_device_key(adb, itr):
+    """디바이스별 상태 저장 키. 포트/디바이스ID 우선, 없으면 itr 사용."""
+    if getattr(adb, "device_id", None):
+        return str(adb.device_id)
+    if getattr(adb, "port", None):
+        return f"port_{adb.port}"
+    return f"itr_{itr}"
 
 
 def check_exception_case(adb) :
@@ -2781,6 +2955,8 @@ def check_abnormal(adb) :
 
 
 
+
+
 def run_one_adb(itr, adb):
     """한 디바이스에 대한 작업 (병렬 실행용). 에러 시 로그만 하고 넘어감."""
     try:
@@ -2816,7 +2992,10 @@ def run_one_adb(itr, adb):
         
 
         
-        itrr = 0
+        runtime_device_key = get_runtime_device_key(adb, itr)
+        adb.runtime_device_key = runtime_device_key
+        itrr = adb.runtime_read("itrr", 0)
+        stamina = adb.runtime_read("stamina", 0)
 
         
         while True :
@@ -2833,6 +3012,18 @@ def run_one_adb(itr, adb):
             
                 adb.get_people()
                 time.sleep(1)
+
+                # 전군 돌격때 보호막 세팅팅
+                check_abnormal(adb)
+                now_utc = datetime.utcnow()
+                is_blocked_time = (
+                    (now_utc.month == 3 and now_utc.day == 20) or
+                    (now_utc.month == 3 and now_utc.day == 19 and 22 <= now_utc.hour < 24) or
+                    (now_utc.month == 3 and now_utc.day == 21 and 0 <= now_utc.hour < 2)
+                )  
+                if is_blocked_time == True and adb.port not in (5555, 5556):
+                    adb.shield()
+                    time.sleep(1)
 
                 check_abnormal(adb)
                 if adb.check_help() == True :
@@ -2887,11 +3078,11 @@ def run_one_adb(itr, adb):
                 adb.get_supply()
                 time.sleep(1)
 
-                itrr = 1
+                adb.runtime_write("itrr", itrr := 1)
 
 
             loop_start = time.time()
-            stamina = 0
+            # stamina = 0
 
             # 현재 위치 판단 (예외처리)
             if check_abnormal(adb) in (5, 10) :
@@ -2938,6 +3129,7 @@ def run_one_adb(itr, adb):
 
                 if queue_check == True :
                     stamina = adb.get_stamina()
+                    adb.runtime_write("stamina", stamina)
 
 
             if check_abnormal(adb) in (5, 10) :
@@ -3008,12 +3200,24 @@ def run_one_adb(itr, adb):
                 time.sleep(1)
 
 
-            if itrr % 10 == 0 :
+            if itrr % 3 == 0 :
                 adb.union_research()
                 time.sleep(1)
 
+
+            # 전군 돌격때 동작 안하도록 세팅
+            now_utc = datetime.utcnow()
+            is_blocked_time = (
+                (now_utc.month == 3 and now_utc.day == 20) or
+                (now_utc.month == 3 and now_utc.day == 19 and 22 <= now_utc.hour < 24) or
+                (now_utc.month == 3 and now_utc.day == 21 and 0 <= now_utc.hour < 2)
+            )
+            is_rest_time = (
+                (now_utc.month == 3 and now_utc.day == 21 and 2 <= now_utc.hour < 4)
+            )
+
             # 자원 채취
-            if queue_check == True and ((stamina > 15 or zero_count == 1) or (zero_count > 1)):
+            if queue_check == True and ((adb.runtime_read("stamina", 0) > 15 or zero_count == 1) or (zero_count > 1)):
                 if check_abnormal(adb) in (5, 10) :
                     time.sleep(0.5)
                     continue
@@ -3049,7 +3253,8 @@ def run_one_adb(itr, adb):
 
                     flag = False
 
-                    if zero_count > 1 : # 자원 채취
+                    if zero_count > 1 and not is_blocked_time:
+                        # 자원 채취
                         bread_value, wood_value, stone_value, iron_value = adb.resource_remain()
                         print(f"adb{itr} : {bread_value/1e+6}, {wood_value/1e+6}, {stone_value/1e+6}, {iron_value/1e+6}")
                         stone_value = stone_value * 5
@@ -3106,12 +3311,53 @@ def run_one_adb(itr, adb):
 
                         result = adb.resource_farming(resource=resource)
 
-                    elif stamina > 15 : # 사냥 이벤트
+                    elif adb.runtime_read("stamina", 0) > 15 : # 사냥 이벤트
 
                         if adb.hunt_event() == False : # 사냥할거 없는경우
                             flag = True
+
+
+                    # 전군 돌격때 공격
+                    elif is_blocked_time == True :
+                        if adb.port in (5555, 5556):
+                            with RUNTIME_STATE_LOCK:
+                                runtime_state = load_runtime_state()
+                            coord_list = runtime_state.get("unit_action_coords", [])
+                            if not isinstance(coord_list, list):
+                                coord_list = []
+
+                            now_ts = int(time.time())
+                            valid_coords = []
+                            for item in coord_list:
+                                if not isinstance(item, dict):
+                                    continue
+                                x_val = item.get("x")
+                                y_val = item.get("y")
+                                ts = item.get("time", item.get("move_time"))
+                                try:
+                                    ts = int(ts)
+                                except (TypeError, ValueError):
+                                    continue
+                                if x_val is None or y_val is None:
+                                    continue
+                                if now_ts - ts >= 300:
+                                    valid_coords.append((ts, str(x_val), str(y_val)))
+
+                            if valid_coords:
+                                valid_coords.sort(key=lambda v: v[0])  # 가장 오래된 시간 우선
+                                _, target_x, target_y = valid_coords[0]
+                                adb.unit_action(x=target_x, y=target_y, mod="attack")
+                        else :
+                            random_x = str(random.randint(520, 525))
+                            random_y = str(random.randint(350, 360))
+                            adb.unit_action(self=adb, x=random_x, y=random_y, mod="move")
+                            
+                    # 전군 돌격 끝나면 철수
+                    elif is_rest_time == True :
+                        adb.unit_action(x="545", y="260", mod="back_all")
                     
-                    if stamina > 60 and zero_count == 1 and flag == True : # 사냥
+
+                    if adb.runtime_read("stamina", 0) > 60 and zero_count == 1 and flag == True : # 사냥
 
                         if adb.port not in (5555, 5556):
                             adb.hunting2(level=2)
@@ -3120,15 +3366,19 @@ def run_one_adb(itr, adb):
 
                     time.sleep(1)
 
+                    if check_abnormal(adb) in (5, 10) :
+                        time.sleep(0.5)
+                        continue
+
                     adb.tap(490,910) # 도시로 돌아가기
 
                     time.sleep(5)
 
 
         
-
-
-            if adb.port in [5555, 5556, 5675, 5685, 5695, 5705] and itrr % 5 == 0:
+            # 계정 변경
+            # itr 5에서 종료되면 6으로 넘어가버리는 경우 있어서 itr == 5로 조건 걸면 안됨
+            if adb.port in [5555, 5556, 5675, 5685, 5695, 5705] and itrr >= 5:
 
                 if check_abnormal(adb) in (5, 10) :
                     time.sleep(0.5)
@@ -3165,11 +3415,11 @@ def run_one_adb(itr, adb):
                 if switching == 0 :
                     adb.itr = 0
                 switching += 1
-                itrr = 0
+                adb.runtime_write("itrr", itrr := 0)
             else :
                 # 이 adb의 루프 카운트 +1 (각자 따로 돔)
                 loop_count[itr] = loop_count.get(itr, 0) + 1
-                itrr += 1
+                adb.runtime_write("itrr", itrr := itrr + 1)
 
                 # 루프 하단 최소 호흡 시간 (CPU 과점유 방지)
                 elapsed = time.time() - loop_start
