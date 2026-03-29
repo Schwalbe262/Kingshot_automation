@@ -2586,6 +2586,7 @@ class ADB:
 
 
         result = None
+        flag = 0
         # 배치, 소환, 공격 버튼 누르기기
         if processed_result:
             for item in processed_result:
@@ -2602,12 +2603,17 @@ class ADB:
                 elif item[0] == text:
                     # 원하는 기능의 동작 버튼 (ex>배치)
                     result = (item[1], item[2]-10)
-
-
+                # 이게 뜨면 그 자리에 뭐가 있기는 함
+                if item[0] in ["상세", "공유"] :
+                    flag = 1
         
         if result is None and mod == "attack" :
-            # 모종의 이유로 사라졌으나 좌표는 지워줌
-            _update_global_unit_coords(add=False)
+
+            # 사라짐
+            if flag == 0 :
+                # 모종의 이유로 사라졌으나 좌표는 지워줌
+                _update_global_unit_coords(add=False)
+
             return 100
 
 
@@ -2817,6 +2823,17 @@ def init_bluestacks_and_adbs():
         if result:
             print(f"adb{iteration}에서 실행 실패 감지 | 감지된 단어: {found_words}")
             success = False
+
+            # 캡처
+            random_name = f"_kingshot_trigger_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}"
+            adb.screen_shot(name=random_name)
+            report_dir = os.path.join(os.getcwd(), "report")
+            os.makedirs(report_dir, exist_ok=True)
+            src_path = f"{adb.base}\\{adb._f(f'capture{random_name}.png')}"
+            dst_path = os.path.join(report_dir, f"{random_name.lstrip('_')}.png")
+            if os.path.exists(src_path):
+                shutil.copy2(src_path, dst_path)
+
         else:
             print(f"adb{iteration} | 감지된 단어: {found_words}")
         time.sleep(1)
@@ -3049,6 +3066,17 @@ def check_abnormal(adb) :
     result = adb.search_template(name="kingshot")
     if result != [] :
         print(f"adb{getattr(adb, 'itr', '?')} kingshot 화면 감지: BlueStacks 종료 트리거")
+
+        # 캡처
+        random_name = f"_kingshot_trigger_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{random.randint(1000, 9999)}"
+        adb.screen_shot(name=random_name)
+        report_dir = os.path.join(os.getcwd(), "report")
+        os.makedirs(report_dir, exist_ok=True)
+        src_path = f"{adb.base}\\{adb._f(f'capture{random_name}.png')}"
+        dst_path = os.path.join(report_dir, f"{random_name.lstrip('_')}.png")
+        if os.path.exists(src_path):
+            shutil.copy2(src_path, dst_path)
+
         shutdown_event.set()
         shutdown_bluestacks_processes(bluestacks_processes, reason="kingshot 화면 감지(비정상 동작)")
         return 10
@@ -3100,6 +3128,18 @@ def run_one_adb(itr, adb):
         adb.runtime_device_key = runtime_device_key
         itrr = adb.runtime_read("itrr", 0)
         stamina = adb.runtime_read("stamina", 0)
+        account = adb.runtime_read("account", 0) # 0일 때 본계정
+
+        now_utc = datetime.utcnow()
+        is_blocked_time = (
+            (now_utc.month == 3 and now_utc.day == 20) or
+            (now_utc.month == 3 and now_utc.day == 21) or
+            (now_utc.month == 3 and now_utc.day == 19 and 22 <= now_utc.hour < 24) or
+            (now_utc.month == 3 and now_utc.day == 22 and 0 <= now_utc.hour < 2)
+        )
+        is_rest_time = (
+            (now_utc.month == 3 and now_utc.day == 22 and 2 <= now_utc.hour < 4)
+        )
 
         
         while True :
@@ -3119,12 +3159,8 @@ def run_one_adb(itr, adb):
 
                 # 전군 돌격때 보호막 세팅팅
                 check_abnormal(adb)
-                now_utc = datetime.utcnow()
-                is_blocked_time = (
-                    (now_utc.month == 3 and now_utc.day == 20) or
-                    (now_utc.month == 3 and now_utc.day == 19 and 22 <= now_utc.hour < 24) or
-                    (now_utc.month == 3 and now_utc.day == 21 and 0 <= now_utc.hour < 2)
-                )  
+                
+
                 if is_blocked_time == True and adb.port not in (5555, 5556):
                     adb.shield()
                     time.sleep(1)
@@ -3156,10 +3192,6 @@ def run_one_adb(itr, adb):
                     adb.union_reward()
                     time.sleep(1)
 
-                    check_abnormal(adb)
-                    adb.get_hero()
-                    time.sleep(1)
-
 
                 check_abnormal(adb)
                 if adb.check_help() == True :
@@ -3168,6 +3200,10 @@ def run_one_adb(itr, adb):
 
                 check_abnormal(adb)
                 adb.read_all_letter()
+                time.sleep(1)
+
+                check_abnormal(adb)
+                adb.get_hero()
                 time.sleep(1)
 
                 check_abnormal(adb)
@@ -3309,16 +3345,7 @@ def run_one_adb(itr, adb):
                 time.sleep(1)
 
 
-            # 전군 돌격때 동작 안하도록 세팅
-            now_utc = datetime.utcnow()
-            is_blocked_time = (
-                (now_utc.month == 3 and now_utc.day == 20) or
-                (now_utc.month == 3 and now_utc.day == 19 and 22 <= now_utc.hour < 24) or
-                (now_utc.month == 3 and now_utc.day == 21 and 0 <= now_utc.hour < 2)
-            )
-            is_rest_time = (
-                (now_utc.month == 3 and now_utc.day == 21 and 2 <= now_utc.hour < 4)
-            )
+
 
             # 자원 채취
             if queue_check == True and ((adb.runtime_read("stamina", 0) > 15 or zero_count == 1) or (zero_count > 1)):
@@ -3424,8 +3451,9 @@ def run_one_adb(itr, adb):
 
                     if flag == True :
 
-
-                        if adb.runtime_read("stamina", 0) > 60 and is_blocked_time == False : # 사냥
+                        # 괴수 사냥
+                        # if adb.runtime_read("stamina", 0) > 60 and is_blocked_time == False : # 사냥
+                        if adb.runtime_read("stamina", 0) > 60:
 
                             if adb.port not in (5555, 5556):
                                 adb.hunting2(level=2)
@@ -3433,8 +3461,9 @@ def run_one_adb(itr, adb):
                                 adb.hunting2(level=3)
 
                         # 전군 돌격때 공격
-                        elif is_blocked_time == True :
-                            if adb.port in (5555, 5556):
+                        # elif is_blocked_time == True :
+                        elif 1 :
+                            if adb.port in (5555, 5556) and account == 0 :
                                 def _get_oldest_valid_attack_coord():
                                     with RUNTIME_STATE_LOCK:
                                         runtime_state = load_runtime_state()
@@ -3514,11 +3543,14 @@ def run_one_adb(itr, adb):
                 processed_result = adb.process_ocr(result=result, x_min=210, x_max=440, y_min=660, y_max=700, y_threshold=10, scale=3, merge=True)
 
                 if adb.port in [] :
-                    farm = True
+                    farm = True # farm -> main 전환
+                    adb.runtime_write("account", 1)
                 elif any(s in processed_result[0][0] for s in ("fa", "ar", "rm")):
-                    farm = True
+                    farm = True # farm -> main 전환
+                    adb.runtime_write("account", 1)
                 else :
-                    farm = False
+                    farm = False # main -> farm 전환
+                    adb.runtime_write("account", 0)
 
                 adb.tap(470,920) # 설정 클릭
                 time.sleep(1)
