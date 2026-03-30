@@ -31,7 +31,7 @@ import threading
 
 import shutil
 
-from module.battle import heal
+from module.battle import heal, unit_action
 
 ADB_COMMAND_TIMEOUT_SEC = 20
 OCR_CONCURRENCY_LIMIT = 2
@@ -2436,246 +2436,7 @@ class ADB:
     # 다른사람의 공격으로 주둔지가 사라졌을 때의 예외처리 코드 필요
     # 단순히 json 수정 코드를 앞으로 옮기면 코드 실행 중 전원 오프로 종료 됐을 때 대응이 안될 것 같음
     def unit_action(self, x, y, mod, all_troops=False, human_attack=False) :
-
-        def _update_global_unit_coords(add=True):
-            state = load_runtime_state()
-            coords = state.get("unit_action_coords", [])
-            if not isinstance(coords, list):
-                coords = []
-
-            coord_x, coord_y = str(x), str(y)
-            account = self.runtime_read("account", -1) # 0일 때 본계정
-
-
-            if add:
-                now_ts = int(time.time())
-                now_human = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                coords = [
-                    c for c in coords
-                    if not (
-                        isinstance(c, dict)
-                        and str(c.get("x")) == coord_x
-                        and str(c.get("y")) == coord_y
-                    )
-                ]
-                coords.append({
-                    "x": coord_x,
-                    "y": coord_y,
-                    "time": now_human,
-                    "time_ts": now_ts,
-                    "port": self.port,
-                    "account": account
-                })
-            else:
-                coords = [
-                    c for c in coords
-                    if not (
-                        isinstance(c, dict)
-                        and str(c.get("x")) == coord_x
-                        and str(c.get("y")) == coord_y
-                    )
-                ]
-
-            state["unit_action_coords"] = coords
-            save_runtime_state(state)
-
-        if self.heal() > 0 :
-            return 5
-
-        if mod == "move" :
-            text = "점령"
-        elif mod == "back" :
-            text = "소환"
-        elif mod == "attack" :
-            text = "공격"
-        elif mod == "back_all" :
-            text = "철수"
-
-
-        if mod != "back_all" :
-            self.tap(160,800) # 좌표 검색
-            time.sleep(1)
-            self.tap(185,470) # x
-            time.sleep(1)
-            self.adb_backspace(5)
-            self.adb_input_text(f"{x}", press_enter=True)
-            self.tap(385,470) # y
-            time.sleep(1)
-            self.adb_backspace(5)
-            self.adb_input_text(f"{y}", press_enter=True)
-            time.sleep(1)
-            self.tap(270,565) # 이동
-            time.sleep(1)
-            self.tap(270,480) # 땅 클릭
-            time.sleep(1)
-
-
-        self.screen_shot(name="_military_base")
-        time.sleep(1)
-
-        
-        ocr_result = self.get_ocr_raw(file_name="capture_military_base.png", x_min=5, x_max=185, y_min=175, y_max=540, y_threshold=10, scale=1)
-        processed_result = self.process_ocr(result=ocr_result, x_min=5, x_max=185, y_min=175, y_max=540, y_threshold=10, scale=1, merge=False)
-
-        if mod == "back_all" :
-            for item in processed_result :
-                if "주둔" in item[0] :
-                    self.tap(165, item[2])
-                    time.sleep(1)
-                    self.tap(385,590) # 소환 확인
-        
-            return 10
-
-        if mod == "attack" or mod == "move":
-            for item in processed_result :
-                # 공격나갔는데 이미 주둔중인 병력 있으면 뺌
-                if "주둔" in item[0] and mod == "attack" :
-                    self.unit_action(x=x, y=y, mod="back_all")
-                    if all_troops == True :
-                        return False
-                # 이미 주둔 중
-                elif any(keyword in item[0] for keyword in ["주둔"]) and mod == "move":
-                    return 30
-                # 주둔을 위해 이미 이동중인 부대가 있음
-                elif any(keyword in item[0] for keyword in ["X", "Y", "x", "y"]):
-                    print(item[0])
-                    return 20
-                
-        
-
-        ocr_result = self.get_ocr_raw(file_name="capture_military_base.png", x_min=115, x_max=425, y_min=475, y_max=840, y_threshold=10, scale=1)
-        processed_result = self.process_ocr(result=ocr_result, x_min=115, x_max=425, y_min=475, y_max=840, y_threshold=10, scale=1, merge=False)
-
-
-        result = None
-        flag = 0
-        # 배치, 소환, 공격 버튼 누르기기
-        if processed_result:
-            for item in processed_result:
-                # 여기서 걸리면 뭔가 있는 땅임
-                if item[0] in ["채집", "수비"] :
-                    self.back()
-                    time.sleep(1)
-                    return False
-                # 여기서 걸리면 사람임
-                elif item[0] in ["집결", "섬", "방문"] and human_attack == False :
-                    self.back()
-                    time.sleep(1)
-                    return False
-                elif item[0] == text and mod != "attack":
-                    # 원하는 기능의 동작 버튼 (ex>배치)
-                    result = (item[1], item[2]-10)
-                # 이게 뜨면 그 자리에 뭐가 있기는 함
-                if item[0] in ["상세", "공유"] :
-                    flag = 1
-
-        # 공격 버튼 찾기
-        if mod == "attack" :
-            result = self.search_template(name="attack")
-            if result != [] :
-                result = result[0][1:]
-            else :
-                result = None
-        
-        if result is None and mod == "attack" :
-
-            # 사라짐
-            if flag == 0 :
-                # 모종의 이유로 사라졌으나 좌표는 지워줌
-                _update_global_unit_coords(add=False)
-
-            return 100
-
-        
-
-
-        if result is not None :
-
-            self.tap(result[0], result[1])
-            time.sleep(2)
-            
-
-            if mod == "back" :
-                self.tap(385,590) # 소환 확인
-                return 2
-            
-            elif mod == "move" :
-                time.sleep(1)
-                self.tap(180,190) # 영웅 취소
-                time.sleep(1)
-
-                self.screen_shot(name="_allocation")
-                result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
-                processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
-
-                flag = 0
-                for item in processed_result:
-                    if "균등" in item[0] or "배치" in item[0] :
-                        self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
-                        time.sleep(1*self.time)
-                        self.tap(410,910) # 출정
-                        time.sleep(2*self.time)
-                        _update_global_unit_coords(add=True)
-                        return True
-                    if "비례" in item[0] :
-                        flag = 1
-
-                if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
-                    self.tap(220,890) # 균등배치
-                elif flag == 1 : # 비례라는 단어가 탐지된 경우
-                    self.tap(150,890) # 균등배치
-                time.sleep(1*self.time)
-                self.tap(410,910) # 출정
-                time.sleep(2*self.time)
-                _update_global_unit_coords(add=True)
-                return True
-            
-            elif mod == "attack" :
-
-                if all_troops == False :
-                    self.screen_shot(name="_allocation")
-                    # result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
-                    # processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
-                    result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=470, y_min=885, y_max=955, y_threshold=10, scale=3)
-                    processed_result = self.process_ocr(result=result, x_min=10, x_max=470, y_min=885, y_max=955, y_threshold=10, scale=3, merge=False)
-
-                    flag = 0 # 배치 버튼 클릭 여부
-                    flag2 = 0 # 출정이 있는지 감지
-                    for item in processed_result:
-                        if "균등" in item[0] :
-                            self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
-                            time.sleep(1*self.time)
-                            self.tap(410,910) # 출정
-                            time.sleep(2*self.time)
-                            _update_global_unit_coords(add=False)
-                            return True
-                        if "비례" in item[0] :
-                            flag = 1
-                        if any(keyword in item[0] for keyword in ["출정", "비례", "균등", "배치"]):
-                            flag2 = 1
-
-                    if flag2 == 0 : # 출정할 슬롯 없음
-                        return False
-
-                    if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
-                        self.tap(220,890) # 균등배치
-                    elif flag == 1 : # 비례라는 단어가 탐지된 경우
-                        self.tap(150,890) # 균등배치
-                    time.sleep(1*self.time)
-                if all_troops == True :
-                    self.tap(410,910) # 출정
-                    _update_global_unit_coords(add=False)
-                    return True
-        else :
-            self.back()
-        return None
-
-
-
-        
-            
-
-    
+        return unit_action(self, x, y, mod, all_troops=all_troops, human_attack=human_attack)
 
 
     
@@ -3508,19 +3269,23 @@ def run_one_adb(itr, adb):
                                     adb.runtime_write("last_unit_action", action)
                                     adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                                 else :
-                                    target_coord = _get_oldest_valid_attack_coord()
-                                    print(target_coord)
                                     attempt = 0
-                                    max_attempts = 1
-                                    while target_coord and attempt < max_attempts:
+                                    max_attempts = 5
+                                    while attempt < max_attempts:
+
+                                        target_coord = _get_oldest_valid_attack_coord()
+
                                         target_x, target_y = target_coord
                                         action = adb.unit_action(x=target_x, y=target_y, mod="attack", all_troops=False)
                                         adb.runtime_write("last_unit_action", action)
                                         adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                                        if action != 100:
-                                            break  # 정상 실행 or 다른 실패코드면 중단
-                                        attempt += 1
-                                        target_coord = _get_oldest_valid_attack_coord()
+                                        
+
+                                        # list에서 지워진 경우
+                                        if action == 200 :
+                                            attempt += 1
+                                        else :
+                                            break
                                             
                             elif adb.port not in (5555, 5556) :
                                 random_x = str(random.randint(520, 525))
