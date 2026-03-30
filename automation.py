@@ -1151,7 +1151,7 @@ class ADB:
                             self.back()
                             time.sleep(1)
                             self.back()
-                            print(f"adb{self.itr} 연맹 연구 기여 완료")
+                            # print(f"adb{self.itr} 연맹 연구 기여 완료")
                             return True
                     else :
                         self.back()
@@ -1280,7 +1280,7 @@ class ADB:
             curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
             next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
 
-            if any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격", "집결", "대기", "주둔"]):
+            if any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격", "집결", "대기", "이동"]):
                 result_s2.append(next_text)
                 index = index + 1
             elif any(keyword in curr_text for keyword in ["방앗", "앗간"]):
@@ -1297,6 +1297,9 @@ class ADB:
                 index = index + 1
             elif any(keyword in curr_text for keyword in ["비어", "채집"]):
                 result_s2.append("채집")
+                index = index + 1
+            elif any(keyword in curr_text for keyword in ["주둔"]):
+                result_s2.append("주둔")
                 index = index + 1
 
             if index == 6:
@@ -1319,6 +1322,9 @@ class ADB:
                 result_s2[itr] = 0
             elif any(material in res for material in ["빵", "목재", "석재", "철광"]) :
                 result_s2[itr] = res
+            #elif "주둔" in res and self.port == 5555 or self.port == 5556 : 
+            elif "주둔" in res :
+                result_s2[itr] = 3
             else :
                 result_s2[itr] = 2
 
@@ -1328,6 +1334,9 @@ class ADB:
         time.sleep(0.5 * self.time)
 
         result = [result_s1, result_s2]
+        self.runtime_write("state1", result_s1)
+        self.runtime_write("state2", result_s2)
+        self.runtime_write("state_update_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         return result
 
     def get_stamina(self) :
@@ -2379,6 +2388,8 @@ class ADB:
 
     def heal(self) :
 
+        self.runtime_write("state", "heal")
+
         self.screen_shot(name="_heal")
 
         img_path = f"{self.base}\\{self._f('capture_heal.png')}"
@@ -2414,7 +2425,13 @@ class ADB:
             return detections
 
         # heal_template2를 우선 검사하고, 하나라도 탐지되면 즉시 종료
-        detections = detect_template("heal_template2.png")
+        detections2 = detect_template("heal_template2.png")
+        detections3 = detect_template("heal_template3.png")
+
+        detections = []
+        detections.extend(detections2)
+        detections.extend(detections3)
+
         if detections != []:
             return 10
 
@@ -2438,6 +2455,10 @@ class ADB:
         has_heal = any("치료" in str(item[0]) for item in processed_result)
         
         if has_heal == True :
+            self.tap(100,700) # 빠른 선택
+            time.sleep(0.5)
+            self.tap(100,700) # 빠른 선택
+            time.sleep(0.5)
             self.tap(390,700) # 치료 버튼 
             time.sleep(1)
             if self.solve_resource() == True :
@@ -2500,8 +2521,12 @@ class ADB:
                 coords = []
 
             coord_x, coord_y = str(x), str(y)
+            account = self.runtime_read("account", -1) # 0일 때 본계정
+
+
             if add:
                 now_ts = int(time.time())
+                now_human = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 coords = [
                     c for c in coords
                     if not (
@@ -2510,7 +2535,14 @@ class ADB:
                         and str(c.get("y")) == coord_y
                     )
                 ]
-                coords.append({"x": coord_x, "y": coord_y, "time": now_ts})
+                coords.append({
+                    "x": coord_x,
+                    "y": coord_y,
+                    "time": now_human,
+                    "time_ts": now_ts,
+                    "port": self.port,
+                    "account": account
+                })
             else:
                 coords = [
                     c for c in coords
@@ -2536,21 +2568,23 @@ class ADB:
         elif mod == "back_all" :
             text = "철수"
 
-        self.tap(160,800) # 좌표 검색
-        time.sleep(1)
-        self.tap(185,470) # x
-        time.sleep(1)
-        self.adb_backspace(5)
-        self.adb_input_text(f"{x}", press_enter=True)
-        self.tap(385,470) # y
-        time.sleep(1)
-        self.adb_backspace(5)
-        self.adb_input_text(f"{y}", press_enter=True)
-        time.sleep(1)
-        self.tap(270,565) # 이동
-        time.sleep(1)
-        self.tap(270,480) # 땅 클릭
-        time.sleep(1)
+
+        if mod != "back_all" :
+            self.tap(160,800) # 좌표 검색
+            time.sleep(1)
+            self.tap(185,470) # x
+            time.sleep(1)
+            self.adb_backspace(5)
+            self.adb_input_text(f"{x}", press_enter=True)
+            self.tap(385,470) # y
+            time.sleep(1)
+            self.adb_backspace(5)
+            self.adb_input_text(f"{y}", press_enter=True)
+            time.sleep(1)
+            self.tap(270,565) # 이동
+            time.sleep(1)
+            self.tap(270,480) # 땅 클릭
+            time.sleep(1)
 
 
         self.screen_shot(name="_military_base")
@@ -2576,13 +2610,18 @@ class ADB:
                     self.unit_action(x=x, y=y, mod="back_all")
                     if all_troops == True :
                         return False
-                # 이동중인 부대가 있음
-                elif any(keyword in item[0] for keyword in ["복귀", "X", "Y", "x", "y"]):
+                # 이미 주둔 중
+                elif any(keyword in item[0] for keyword in ["주둔"]) and mod == "move":
+                    return 30
+                # 주둔을 위해 이미 이동중인 부대가 있음
+                elif any(keyword in item[0] for keyword in ["X", "Y", "x", "y"]):
+                    print(item[0])
                     return 20
+                
         
 
-        ocr_result = self.get_ocr_raw(file_name="capture_military_base.png", x_min=115, x_max=425, y_min=475, y_max=810, y_threshold=10, scale=1)
-        processed_result = self.process_ocr(result=ocr_result, x_min=115, x_max=425, y_min=475, y_max=810, y_threshold=10, scale=1, merge=False)
+        ocr_result = self.get_ocr_raw(file_name="capture_military_base.png", x_min=115, x_max=425, y_min=475, y_max=840, y_threshold=10, scale=1)
+        processed_result = self.process_ocr(result=ocr_result, x_min=115, x_max=425, y_min=475, y_max=840, y_threshold=10, scale=1, merge=False)
 
 
         result = None
@@ -2600,12 +2639,20 @@ class ADB:
                     self.back()
                     time.sleep(1)
                     return False
-                elif item[0] == text:
+                elif item[0] == text and mod != "attack":
                     # 원하는 기능의 동작 버튼 (ex>배치)
                     result = (item[1], item[2]-10)
                 # 이게 뜨면 그 자리에 뭐가 있기는 함
                 if item[0] in ["상세", "공유"] :
                     flag = 1
+
+        # 공격 버튼 찾기
+        if mod == "attack" :
+            result = self.search_template(name="attack")
+            if result != [] :
+                result = result[0][1:]
+            else :
+                result = None
         
         if result is None and mod == "attack" :
 
@@ -2616,11 +2663,14 @@ class ADB:
 
             return 100
 
+        
+
 
         if result is not None :
 
             self.tap(result[0], result[1])
             time.sleep(2)
+            
 
             if mod == "back" :
                 self.tap(385,590) # 소환 확인
@@ -2658,31 +2708,41 @@ class ADB:
                 return True
             
             elif mod == "attack" :
+
                 if all_troops == False :
                     self.screen_shot(name="_allocation")
-                    result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
-                    processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
+                    # result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3)
+                    # processed_result = self.process_ocr(result=result, x_min=10, x_max=290, y_min=920, y_max=955, y_threshold=10, scale=3, merge=False)
+                    result = self.get_ocr_raw(file_name="capture_allocation.png", x_min=10, x_max=470, y_min=885, y_max=955, y_threshold=10, scale=3)
+                    processed_result = self.process_ocr(result=result, x_min=10, x_max=470, y_min=885, y_max=955, y_threshold=10, scale=3, merge=False)
 
-                    flag = 0
+                    flag = 0 # 배치 버튼 클릭 여부
+                    flag2 = 0 # 출정이 있는지 감지
                     for item in processed_result:
-                        if "균등" in item[0] or "배치" in item[0] :
+                        if "균등" in item[0] :
                             self.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
                             time.sleep(1*self.time)
                             self.tap(410,910) # 출정
                             time.sleep(2*self.time)
-                            _update_global_unit_coords(add=True)
+                            _update_global_unit_coords(add=False)
                             return True
                         if "비례" in item[0] :
                             flag = 1
+                        if any(keyword in item[0] for keyword in ["출정", "비례", "균등", "배치"]):
+                            flag2 = 1
+
+                    if flag2 == 0 : # 출정할 슬롯 없음
+                        return False
 
                     if flag == 0 : # 비례라는 단어가 탐지되지 않은 경우
                         self.tap(220,890) # 균등배치
                     elif flag == 1 : # 비례라는 단어가 탐지된 경우
                         self.tap(150,890) # 균등배치
                     time.sleep(1*self.time)
-                self.tap(410,910) # 출정
-                _update_global_unit_coords(add=False)
-                return True
+                if all_troops == True :
+                    self.tap(410,910) # 출정
+                    _update_global_unit_coords(add=False)
+                    return True
         else :
             self.back()
         return None
@@ -2802,7 +2862,7 @@ def init_bluestacks_and_adbs():
     #     adb.start_kingshot()
     #     time.sleep(1)
 
-    time.sleep(12)
+    time.sleep(5)
 
     success = True
 
@@ -2935,7 +2995,10 @@ def save_runtime_state(state):
     try:
         tmp_path = RUNTIME_STATE_PATH + ".tmp"
         with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
+            text = json.dumps(state, ensure_ascii=False, indent=2)
+            text = re.sub(r'("state1": )\[\n\s*([^\[\]\n]+(?:,\n\s*[^\[\]\n]+)*)\n\s*\]', lambda m: m.group(1) + "[" + m.group(2).replace(",\n", ", ").replace("\n", " ").replace("  ", " ").strip() + "]", text)
+            text = re.sub(r'("state2": )\[\n\s*([^\[\]\n]+(?:,\n\s*[^\[\]\n]+)*)\n\s*\]', lambda m: m.group(1) + "[" + m.group(2).replace(",\n", ", ").replace("\n", " ").replace("  ", " ").strip() + "]", text)
+            f.write(text)
         os.replace(tmp_path, RUNTIME_STATE_PATH)
     except Exception as e:
         print(f"[경고] runtime state 저장 실패: {e}")
@@ -2968,7 +3031,10 @@ class RuntimeStateDB:
         try:
             tmp_path = self.state_path + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(state, f, ensure_ascii=False, indent=2)
+                text = json.dumps(state, ensure_ascii=False, indent=2)
+                text = re.sub(r'("state1": )\[\n\s*([^\[\]\n]+(?:,\n\s*[^\[\]\n]+)*)\n\s*\]', lambda m: m.group(1) + "[" + m.group(2).replace(",\n", ", ").replace("\n", " ").replace("  ", " ").strip() + "]", text)
+                text = re.sub(r'("state2": )\[\n\s*([^\[\]\n]+(?:,\n\s*[^\[\]\n]+)*)\n\s*\]', lambda m: m.group(1) + "[" + m.group(2).replace(",\n", ", ").replace("\n", " ").replace("  ", " ").strip() + "]", text)
+                f.write(text)
             os.replace(tmp_path, self.state_path)
         except Exception as e:
             print(f"[경고] runtime db 저장 실패: {e}")
@@ -3027,6 +3093,7 @@ def reconnection(adb) :
     reconnect_check = adb.check_reconnect()
     if reconnect_check == True :
         print("reconnect")
+        adb.runtime_write("account", -1)
         time.sleep(300)
         adb.tap(380,595) # reconnect
         time.sleep(10)
@@ -3128,7 +3195,7 @@ def run_one_adb(itr, adb):
         adb.runtime_device_key = runtime_device_key
         itrr = adb.runtime_read("itrr", 0)
         stamina = adb.runtime_read("stamina", 0)
-        account = adb.runtime_read("account", 0) # 0일 때 본계정
+        account = adb.runtime_read("account", -1) # 0일 때 본계정
 
         now_utc = datetime.utcnow()
         is_blocked_time = (
@@ -3154,10 +3221,9 @@ def run_one_adb(itr, adb):
 
             if switching <= 2 and itrr == 0 :
             
-                adb.get_people()
-                time.sleep(1)
+                
 
-                # 전군 돌격때 보호막 세팅팅
+                # 전군 돌격때 보호막 세팅
                 check_abnormal(adb)
                 
 
@@ -3175,6 +3241,10 @@ def run_one_adb(itr, adb):
                 if 8 <= current_hour <= 10:
                     check_abnormal(adb)
                     adb.get_VIP()
+                    time.sleep(1)
+
+                    check_abnormal(adb)
+                    adb.get_people()
                     time.sleep(1)
 
                 # 4의 배수 시간마다 실행
@@ -3254,22 +3324,26 @@ def run_one_adb(itr, adb):
                 time.sleep(1)
 
             state = adb.state_check()
-            [build1, build2, unit1, unit2, unit3, research] = [3, 3, 3, 3, 3, 3]
+            [build1, build2, unit1, unit2, unit3, research] = [5, 5, 5, 5, 5, 5]
             queue_check = False
+            attack_check = False
             zero_count = 0
             if state is not False :
                 [build1, build2, unit1, unit2, unit3, research] = state[0]
                 zero_count = sum(str(x) == "0" for x in state[1])
+                three_count = sum(str(x) == "3" for x in state[1])
                 queue_check = zero_count > 0
+                attack_check = three_count > 0
                 
                 # queue_check = sum(str(x) == "0" for x in state[1]) >= 2
-                print(f"adb{itr} : {state[0]}")
-                print(f"adb{itr} : {state[1]}")
-                print(f"adb{itr} : {queue_check}")
+                # print(f"adb{itr} : {state[0]}")
+                # print(f"adb{itr} : {state[1]}")
+                # print(f"adb{itr} : {queue_check}")
 
                 if queue_check == True :
                     stamina = adb.get_stamina()
                     adb.runtime_write("stamina", stamina)
+            
 
 
             if check_abnormal(adb) in (5, 10) :
@@ -3348,7 +3422,7 @@ def run_one_adb(itr, adb):
 
 
             # 자원 채취
-            if queue_check == True and ((adb.runtime_read("stamina", 0) > 15 or zero_count == 1) or (zero_count > 1)):
+            if (queue_check == True and ((adb.runtime_read("stamina", 0) > 15 or zero_count == 1) or (zero_count > 1))) or attack_check == True:
                 if check_abnormal(adb) in (5, 10) :
                     time.sleep(0.5)
                     continue
@@ -3381,8 +3455,6 @@ def run_one_adb(itr, adb):
                     time.sleep(5)
 
                     adb.heal()
-
-                    flag = False
 
                     if zero_count > 1 and not is_blocked_time:
                         # 자원 채취
@@ -3442,10 +3514,17 @@ def run_one_adb(itr, adb):
 
                         result = adb.resource_farming(resource=resource)
 
-                    elif adb.runtime_read("stamina", 0) > 15 : # 사냥 이벤트
+                    # 전망대 이벤트
+                    hunt_event = False
+                    if stamina > 15 :
+                        hunt_event = adb.hunt_event()
 
-                        if adb.hunt_event() == False : # 사냥할거 없는경우
-                            flag = True
+                    if hunt_event == False :
+                        flag = True
+                        adb.runtime_write("hunt_event_remain", False)
+                    else :
+                        flag = False
+                        adb.runtime_write("hunt_event_remain", True)
 
 
 
@@ -3455,10 +3534,12 @@ def run_one_adb(itr, adb):
                         # if adb.runtime_read("stamina", 0) > 60 and is_blocked_time == False : # 사냥
                         if adb.runtime_read("stamina", 0) > 60:
 
-                            if adb.port not in (5555, 5556):
-                                adb.hunting2(level=2)
-                            else :
+                            if adb.port in (5555, 5556) and account == 0 :
+                                adb.hunting2(level=4)
+                            elif adb.port in (5555, 5556) and account == 1 :
                                 adb.hunting2(level=3)
+                            else :
+                                adb.hunting2(level=2)
 
                         # 전군 돌격때 공격
                         # elif is_blocked_time == True :
@@ -3478,14 +3559,20 @@ def run_one_adb(itr, adb):
                                             continue
                                         x_val = item.get("x")
                                         y_val = item.get("y")
-                                        ts = item.get("time", item.get("move_time"))
+                                        ts = item.get("time_ts", item.get("time", item.get("move_time")))
                                         try:
                                             ts = int(ts)
                                         except (TypeError, ValueError):
-                                            continue
+                                            if isinstance(ts, str):
+                                                try:
+                                                    ts = int(datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").timestamp())
+                                                except ValueError:
+                                                    continue
+                                            else:
+                                                continue
                                         if x_val is None or y_val is None:
                                             continue
-                                        if now_ts - ts >= 300:
+                                        if now_ts - ts >= 800:
                                             valid_coords.append((ts, str(x_val), str(y_val)))
 
                                     if not valid_coords:
@@ -3493,25 +3580,37 @@ def run_one_adb(itr, adb):
                                     valid_coords.sort(key=lambda v: v[0])  # 가장 오래된 시간 우선
                                     return valid_coords[0][1], valid_coords[0][2]
 
-                                target_coord = _get_oldest_valid_attack_coord()
-                                attempt = 0
-                                max_attempts = 5
-                                while target_coord and attempt < max_attempts:
-                                    target_x, target_y = target_coord
-                                    action = adb.unit_action(x=target_x, y=target_y, mod="attack", all_troops=False)
-                                    if action != 100:
-                                        break  # 정상 실행 or 다른 실패코드면 중단
-                                    attempt += 1
+                                if attack_check == True :
+                                    action = adb.unit_action(x="545", y="260", mod="back_all")
+                                    adb.runtime_write("last_unit_action", action)
+                                    adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                                else :
                                     target_coord = _get_oldest_valid_attack_coord()
+                                    print(target_coord)
+                                    attempt = 0
+                                    max_attempts = 1
+                                    while target_coord and attempt < max_attempts:
+                                        target_x, target_y = target_coord
+                                        action = adb.unit_action(x=target_x, y=target_y, mod="attack", all_troops=False)
+                                        adb.runtime_write("last_unit_action", action)
+                                        adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                                        if action != 100:
+                                            break  # 정상 실행 or 다른 실패코드면 중단
+                                        attempt += 1
+                                        target_coord = _get_oldest_valid_attack_coord()
                                             
-                            else :
+                            elif adb.port not in (5555, 5556) :
                                 random_x = str(random.randint(520, 525))
                                 random_y = str(random.randint(350, 360))
-                                adb.unit_action(x=random_x, y=random_y, mod="move")
+                                action = adb.unit_action(x=random_x, y=random_y, mod="move")
+                                adb.runtime_write("last_unit_action", action)
+                                adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                                 
                         # 전군 돌격 끝나면 철수
                         elif is_rest_time == True :
-                            adb.unit_action(x="545", y="260", mod="back_all")
+                            adb = adb.unit_action(x="545", y="260", mod="back_all")
+                            adb.runtime_write("last_unit_action", action)
+                            adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                             
 
                         
@@ -3544,13 +3643,13 @@ def run_one_adb(itr, adb):
 
                 if adb.port in [] :
                     farm = True # farm -> main 전환
-                    adb.runtime_write("account", 1)
+                    adb.runtime_write("account", 0)
                 elif any(s in processed_result[0][0] for s in ("fa", "ar", "rm")):
                     farm = True # farm -> main 전환
-                    adb.runtime_write("account", 1)
+                    adb.runtime_write("account", 0)
                 else :
                     farm = False # main -> farm 전환
-                    adb.runtime_write("account", 0)
+                    adb.runtime_write("account", 1)
 
                 adb.tap(470,920) # 설정 클릭
                 time.sleep(1)
