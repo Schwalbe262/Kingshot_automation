@@ -2388,8 +2388,11 @@ class ADB:
 
     def heal(self) :
 
+        # state 기록록
         self.runtime_write("state", "heal")
 
+
+        # 힐 아이콘 인식
         self.screen_shot(name="_heal")
 
         img_path = f"{self.base}\\{self._f('capture_heal.png')}"
@@ -2424,29 +2427,33 @@ class ADB:
             detections.sort(key=lambda x: x[3], reverse=True)
             return detections
 
-        # heal_template2를 우선 검사하고, 하나라도 탐지되면 즉시 종료
+        # 현재 이미 heal을 하고있는지 인식
         detections2 = detect_template("heal_template2.png")
         detections3 = detect_template("heal_template3.png")
 
         detections = []
+        # detect_template이 2D list 형태라 extend
         detections.extend(detections2)
         detections.extend(detections3)
 
+        # 여기에 걸릴 경우 이미 heal을 하는 중이므로 return
         if detections != []:
             return 10
 
-        # heal_template2가 없을 때만 heal_template1 검사
+        # heal 버튼이 있는지 감지
         detections = detect_template("heal_template1.png")
 
         # 아무것도 없을 경우
         if detections == [] : 
             time.sleep(1)
             return False
-        # 힐 버튼 아이콘콘 클릭
+        # 힐 버튼 아이콘 클릭
         else :
             self.tap(detections[0][1], detections[0][2])
             time.sleep(1)
 
+
+        # 힐 버튼 클릭 후 치료 버튼이 잘 뜨는지 인식
         self.screen_shot(name="_heal")
 
         result = self.get_ocr_raw(file_name="capture_heal.png", x_min=365, x_max=415, y_min=670, y_max=705, y_threshold=10, scale=3)
@@ -2454,6 +2461,7 @@ class ADB:
 
         has_heal = any("치료" in str(item[0]) for item in processed_result)
         
+        # 힐 버튼 인식 됐을 경우 다음 진행
         if has_heal == True :
             self.tap(100,700) # 빠른 선택
             time.sleep(0.5)
@@ -2467,8 +2475,11 @@ class ADB:
             self.tap(390,700) # 연맹 협조
             time.sleep(1)
             self.back()
+            return True
+        elif has_heal == False :
+            return False
 
-        return True
+        
 
     def troops_back(self):
 
