@@ -1,0 +1,6 @@
+# report output folder
+report/
+
+# python cache files
+__pycache__/
+*.pyc
