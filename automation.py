@@ -21,7 +21,7 @@ import os
 
 import json
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import traceback
 
@@ -1282,7 +1282,10 @@ class ADB:
             curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
             next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
 
-            if any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격", "집결", "대기", "이동"]):
+            if any(keyword in curr_text for keyword in ["주둔"]):
+                result_s2.append("주둔")
+                index = index + 1
+            elif any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격", "집결", "대기", "이동"]):
                 result_s2.append(next_text)
                 index = index + 1
             elif any(keyword in curr_text for keyword in ["방앗", "앗간"]):
@@ -1300,9 +1303,7 @@ class ADB:
             elif any(keyword in curr_text for keyword in ["비어", "채집"]):
                 result_s2.append("채집")
                 index = index + 1
-            elif any(keyword in curr_text for keyword in ["주둔"]):
-                result_s2.append("주둔")
-                index = index + 1
+            
 
             if index == 6:
                 broke_early = True
@@ -2891,6 +2892,13 @@ def run_one_adb(itr, adb):
         is_rest_time = (
             (now_utc.month == 3 and now_utc.day == 22 and 2 <= now_utc.hour < 4)
         )
+        # 한국시간(KST) 매일 20:00~20:30 — 포트 5555만 괴수 사냥(hunting2) 금지
+        _kst = datetime.now(timezone(timedelta(hours=9)))
+        is_kst_hunting_forbidden = (
+            (_kst.hour == 20 and _kst.minute < 30) or
+            (_kst.hour == 13 and _kst.minute >= 30) or
+            (_kst.hour == 14 and _kst.minute < 0)  # 오후 1시 30분 ~ 오후 2시 (14시 0분까지)
+        )
 
         
         while True :
@@ -3139,17 +3147,98 @@ def run_one_adb(itr, adb):
                     time.sleep(5)
 
                     adb.heal()
+                    skip_resource_farming = False
 
-                    if zero_count > 1 and not is_blocked_time:
+                    if three_count > 0 and adb.port in (5555, 5556) and account == 0 :
+                        action = adb.unit_action(x="545", y="260", mod="back_all")
+                        adb.runtime_write("last_unit_action", action)
+                        adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                    # unit action
+                    elif 1 :
+                        # 공격
+                        if adb.port in (5555, 5556) and account == 0 :
+                            def _get_oldest_valid_attack_coord():
+                                with RUNTIME_STATE_LOCK:
+                                    runtime_state = load_runtime_state()
+                                coord_list = runtime_state.get("unit_action_coords", [])
+                                if not isinstance(coord_list, list):
+                                    coord_list = []
+
+                                now_ts = int(time.time())
+                                valid_coords = []
+                                for item in coord_list:
+                                    if not isinstance(item, dict):
+                                        continue
+                                    x_val = item.get("x")
+                                    y_val = item.get("y")
+                                    ts = item.get("time_ts", item.get("time", item.get("move_time")))
+                                    try:
+                                        ts = int(ts)
+                                    except (TypeError, ValueError):
+                                        if isinstance(ts, str):
+                                            try:
+                                                ts = int(datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").timestamp())
+                                            except ValueError:
+                                                continue
+                                        else:
+                                            continue
+                                    if x_val is None or y_val is None:
+                                        continue
+                                    if now_ts - ts >= 800:
+                                        valid_coords.append((ts, str(x_val), str(y_val)))
+
+                                if not valid_coords:
+                                    return None
+                                valid_coords.sort(key=lambda v: v[0])  # 가장 오래된 시간 우선
+                                return valid_coords[0][1], valid_coords[0][2]
+
+                            attempt = 0
+                            max_attempts = 5
+                            while attempt < max_attempts:
+
+                                target_coord = _get_oldest_valid_attack_coord()
+
+                                target_x, target_y = target_coord
+                                action = adb.unit_action(x=target_x, y=target_y, mod="attack", all_troops=False)
+                                adb.runtime_write("last_unit_action", action)
+                                adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                                if action is True:
+                                    skip_resource_farming = True
+                                    break
+                                
+
+                                # list에서 지워진 경우
+                                if action == 200 :
+                                    attempt += 1
+                                else :
+                                    break
+                                        
+                        elif adb.port not in (5555, 5556) and three_count == 0 :
+                            random_x = str(random.randint(520, 525))
+                            random_y = str(random.randint(350, 360))
+                            action = adb.unit_action(x=random_x, y=random_y, mod="move")
+                            adb.runtime_write("last_unit_action", action)
+                            adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                            if action is True:
+                                skip_resource_farming = True
+
+
+
+
+                    if (not skip_resource_farming) and zero_count > 1 and not is_blocked_time:
                         # 자원 채취
                         bread_value, wood_value, stone_value, iron_value = adb.resource_remain()
                         print(f"adb{itr} : {bread_value/1e+6}, {wood_value/1e+6}, {stone_value/1e+6}, {iron_value/1e+6}")
                         stone_value = stone_value * 5
                         iron_value = iron_value * 20
 
+
+
+                    
+
                         time.sleep(3)
 
-                        # 이미 수집중인 자원 배제제
+                        # 이미 수집중인 자원 배제
                         resource_list = [bread_value, wood_value, stone_value, iron_value]
                         for resource_ex in state[1]:
                             if not isinstance(resource_ex, str):
@@ -3216,84 +3305,15 @@ def run_one_adb(itr, adb):
 
                         # 괴수 사냥
                         # if adb.runtime_read("stamina", 0) > 60 and is_blocked_time == False : # 사냥
-                        if adb.runtime_read("stamina", 0) > 60:
+                        if adb.runtime_read("stamina", 0) > 80:
 
-                            if adb.port in (5555, 5556) and account == 0 :
+                            if adb.port in (5555, 5556) and account == 0 and is_kst_hunting_forbidden :
                                 adb.hunting2(level=4)
                             elif adb.port in (5555, 5556) and account == 1 :
                                 adb.hunting2(level=3)
-                            else :
-                                adb.hunting2(level=2)
+                            else : 
+                                adb.hunting2(level=3)
 
-                        # 전군 돌격때 공격
-                        # elif is_blocked_time == True :
-                        elif 1 :
-                            if adb.port in (5555, 5556) and account == 0 :
-                                def _get_oldest_valid_attack_coord():
-                                    with RUNTIME_STATE_LOCK:
-                                        runtime_state = load_runtime_state()
-                                    coord_list = runtime_state.get("unit_action_coords", [])
-                                    if not isinstance(coord_list, list):
-                                        coord_list = []
-
-                                    now_ts = int(time.time())
-                                    valid_coords = []
-                                    for item in coord_list:
-                                        if not isinstance(item, dict):
-                                            continue
-                                        x_val = item.get("x")
-                                        y_val = item.get("y")
-                                        ts = item.get("time_ts", item.get("time", item.get("move_time")))
-                                        try:
-                                            ts = int(ts)
-                                        except (TypeError, ValueError):
-                                            if isinstance(ts, str):
-                                                try:
-                                                    ts = int(datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").timestamp())
-                                                except ValueError:
-                                                    continue
-                                            else:
-                                                continue
-                                        if x_val is None or y_val is None:
-                                            continue
-                                        if now_ts - ts >= 800:
-                                            valid_coords.append((ts, str(x_val), str(y_val)))
-
-                                    if not valid_coords:
-                                        return None
-                                    valid_coords.sort(key=lambda v: v[0])  # 가장 오래된 시간 우선
-                                    return valid_coords[0][1], valid_coords[0][2]
-
-                                if attack_check == True :
-                                    action = adb.unit_action(x="545", y="260", mod="back_all")
-                                    adb.runtime_write("last_unit_action", action)
-                                    adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                                else :
-                                    attempt = 0
-                                    max_attempts = 5
-                                    while attempt < max_attempts:
-
-                                        target_coord = _get_oldest_valid_attack_coord()
-
-                                        target_x, target_y = target_coord
-                                        action = adb.unit_action(x=target_x, y=target_y, mod="attack", all_troops=False)
-                                        adb.runtime_write("last_unit_action", action)
-                                        adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                                        
-
-                                        # list에서 지워진 경우
-                                        if action == 200 :
-                                            attempt += 1
-                                        else :
-                                            break
-                                            
-                            elif adb.port not in (5555, 5556) :
-                                random_x = str(random.randint(520, 525))
-                                random_y = str(random.randint(350, 360))
-                                action = adb.unit_action(x=random_x, y=random_y, mod="move")
-                                adb.runtime_write("last_unit_action", action)
-                                adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                                
                         # 전군 돌격 끝나면 철수
                         elif is_rest_time == True :
                             adb = adb.unit_action(x="545", y="260", mod="back_all")
