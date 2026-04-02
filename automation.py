@@ -1825,6 +1825,7 @@ class ADB:
             self.drag_with_adb(75, 525, 475, 525, duration_ms=500) # 드래그해서 앞으로 보내기
             time.sleep(1)
             self.tap(80,525) # 1레벨 선택
+            time.sleep(1)
 
         self.tap(390,830) # 생산버튼
         time.sleep(2)
@@ -3233,6 +3234,16 @@ def run_one_adb(itr, adb):
                                     attempt += 1
                                 else :
                                     break
+
+                        elif adb.port in (5675, 5685, 5695, 5705, 5635, 5645) and three_count == 0 :
+                            random_x = str(random.randint(475, 485))
+                            random_y = str(random.randint(380, 390))
+                            action = adb.unit_action(x=random_x, y=random_y, mod="move", ratio=None, preset=1)
+                            adb.runtime_write("last_unit_action", action)
+                            adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                            if action is True:
+                                skip_resource_farming = True
+
                         elif adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 1 and three_count == 0 :
                             random_x = str(random.randint(475, 485))
                             random_y = str(random.randint(380, 390))
@@ -3272,50 +3283,39 @@ def run_one_adb(itr, adb):
                             "철광": iron_value,
                         }
 
-                        resource_list = ["빵", "목재", "석재", "철광"]
-
+                        _all_resources = ("빵", "목재", "석재", "철광")
+                        resource_list = set(_all_resources)
                         for resource_ex in state[1]:
                             if not isinstance(resource_ex, str):
                                 continue
-                            if "빵" in resource_ex :
-                                try:
-                                    resource_list.remove("빵")
-                                except ValueError:
-                                    pass
-                            elif "목재" in resource_ex :
-                                try:
-                                    resource_list.remove("목재")
-                                except ValueError:
-                                    pass
-                            elif "석재" in resource_ex :
-                                try:
-                                    resource_list.remove("석재")
-                                except ValueError:
-                                    pass
-                            elif "철광" in resource_ex :
-                                try:
-                                    resource_list.remove("철광")
-                                except ValueError:
-                                    pass
+                            for key in _all_resources:
+                                if key in resource_ex:
+                                    resource_list.discard(key)
+                                    break
 
-
-                        # if resource_list == []:
-                        #     resource_list = ["빵", "목재", "석재", "철광"]
+                        # if not resource_list:
+                        #     resource_list = set(_all_resources)
 
                         # 남은 후보 중 최솟값 리소스 선택
 
 
-                        if resource_list is not [] :
+                        # 빈 리스트일 때는 min()을 호출하면 ValueError가 발생하므로
+                        # truthy 체크로 안전하게 분기합니다.
+                        if resource_list:
                             min_value = min(resource_values[name] for name in resource_list)
-                            if min_value == bread_value:
-                                resource = "빵"
-                            elif min_value == wood_value:
-                                resource = "목재"
-                            elif min_value == stone_value:
-                                resource = "석재"
-                            else:
-                                resource = "철광"
-                        elif resource_list is [] :
+                            resource = None
+                            for label, tmpl, val in (
+                                ("빵", "bread", bread_value),
+                                ("목재", "wood", wood_value),
+                                ("석재", "stone", stone_value),
+                                ("철광", "iron", iron_value),
+                            ):
+                                if min_value == val:
+                                    resource = (
+                                        label if adb.search_template(name=tmpl) == [] else None
+                                    )
+                                    break
+                        else:
                             resource = None
                         
                         while True :
