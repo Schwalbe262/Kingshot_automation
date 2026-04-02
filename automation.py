@@ -33,6 +33,7 @@ import shutil
 
 from module.battle import heal, unit_action
 
+
 ADB_COMMAND_TIMEOUT_SEC = 20
 OCR_CONCURRENCY_LIMIT = 2
 OCR_SEMAPHORE = threading.Semaphore(OCR_CONCURRENCY_LIMIT)
@@ -1791,7 +1792,7 @@ class ADB:
             time.sleep(3)
             self.tap(270,330) # 도움 버튼
 
-    def unit_training(self, unit) :
+    def unit_training(self, unit, lower=False) :
 
         def check_msg(msg, x_min, x_max, y_min, y_max, y_threshold, scale):
             self.screen_shot(name="_barracks_button")
@@ -1819,6 +1820,12 @@ class ADB:
         time.sleep(3)
         self.tap(395,525) # 훈련버튼
         time.sleep(1)
+
+        if lower == True :
+            self.drag_with_adb(75, 525, 475, 525, duration_ms=500) # 드래그해서 앞으로 보내기
+            time.sleep(1)
+            self.tap(80,525) # 1레벨 선택
+
         self.tap(390,830) # 생산버튼
         time.sleep(2)
         if self.solve_resource() == True :
@@ -2389,8 +2396,8 @@ class ADB:
         self.tap(410,910) # 출정
         time.sleep(2*self.time)
 
-    def heal(self) :
-        return heal(self)
+    def heal(self, fast_heal=False) :
+        return heal(self, fast_heal=fast_heal)
 
         
 
@@ -2436,8 +2443,8 @@ class ADB:
 
     # 다른사람의 공격으로 주둔지가 사라졌을 때의 예외처리 코드 필요
     # 단순히 json 수정 코드를 앞으로 옮기면 코드 실행 중 전원 오프로 종료 됐을 때 대응이 안될 것 같음
-    def unit_action(self, x, y, mod, all_troops=False, human_attack=False) :
-        return unit_action(self, x, y, mod, all_troops=all_troops, human_attack=human_attack)
+    def unit_action(self, x, y, mod, all_troops=False, human_attack=False, state=None, ratio=None, preset=None) :
+        return unit_action(self, x, y, mod, all_troops=all_troops, human_attack=human_attack, state=state, ratio=ratio, preset=preset)
 
 
     
@@ -2547,7 +2554,7 @@ def init_bluestacks_and_adbs():
     #     adb.start_kingshot()
     #     time.sleep(1)
 
-    time.sleep(5)
+    time.sleep(0)
 
     success = True
 
@@ -3077,14 +3084,22 @@ def run_one_adb(itr, adb):
                     adb.tap(400,820) # 연맹 도움
                     time.sleep(1)
 
+
+                if adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 0 :
+                    lower = False
+                else :
+                    lower = True
+
+                
+
                 if unit1 == 1 :
-                    adb.unit_training(unit="보병")
+                    adb.unit_training(unit="보병", lower=lower)
                     time.sleep(1)
                 if unit2 == 1 :
-                    adb.unit_training(unit="기병")
+                    adb.unit_training(unit="기병", lower=lower)
                     time.sleep(1)
                 if unit3 == 1 :
-                    adb.unit_training(unit="궁병")
+                    adb.unit_training(unit="궁병", lower=lower)
                     time.sleep(1)
 
             if check_abnormal(adb) in (5, 10) :
@@ -3146,17 +3161,20 @@ def run_one_adb(itr, adb):
                     adb.tap(490,910) # 야외로 나가기
                     time.sleep(5)
 
-                    adb.heal()
+                    if adb.port in (5555, 5556) :
+                        heal = adb.heal()
+                    else :
+                        heal = adb.heal(fast_heal=False)
                     skip_resource_farming = False
 
-                    if three_count > 0 and adb.port in (5555, 5556) and account == 0 :
-                        action = adb.unit_action(x="545", y="260", mod="back_all")
+                    if three_count > 0 and adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 0 :
+                        action = adb.unit_action(x="545", y="260", mod="back_all", state=state[1])
                         adb.runtime_write("last_unit_action", action)
                         adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                     # unit action
                     elif 1 :
                         # 공격
-                        if adb.port in (5555, 5556) and account == 0 :
+                        if adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 0 :
                             def _get_oldest_valid_attack_coord():
                                 with RUNTIME_STATE_LOCK:
                                     runtime_state = load_runtime_state()
@@ -3184,7 +3202,7 @@ def run_one_adb(itr, adb):
                                             continue
                                     if x_val is None or y_val is None:
                                         continue
-                                    if now_ts - ts >= 800:
+                                    if now_ts - ts >= 600: # 출발로부터 몇초 지나야 유효하게 볼건지
                                         valid_coords.append((ts, str(x_val), str(y_val)))
 
                                 if not valid_coords:
@@ -3197,6 +3215,9 @@ def run_one_adb(itr, adb):
                             while attempt < max_attempts:
 
                                 target_coord = _get_oldest_valid_attack_coord()
+
+                                if target_coord is None :
+                                    break
 
                                 target_x, target_y = target_coord
                                 action = adb.unit_action(x=target_x, y=target_y, mod="attack", all_troops=False)
@@ -3212,11 +3233,19 @@ def run_one_adb(itr, adb):
                                     attempt += 1
                                 else :
                                     break
+                        elif adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 1 and three_count == 0 :
+                            random_x = str(random.randint(475, 485))
+                            random_y = str(random.randint(380, 390))
+                            action = adb.unit_action(x=random_x, y=random_y, mod="move", ratio=None, preset=1)
+                            adb.runtime_write("last_unit_action", action)
+                            adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                            if action is True:
+                                skip_resource_farming = True
                                         
-                        elif adb.port not in (5555, 5556) and three_count == 0 :
-                            random_x = str(random.randint(520, 525))
-                            random_y = str(random.randint(350, 360))
-                            action = adb.unit_action(x=random_x, y=random_y, mod="move")
+                        elif (adb.port not in (5555, 5556) and three_count == 0) or (adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 1 and three_count == 0) :
+                            random_x = str(random.randint(475, 485))
+                            random_y = str(random.randint(380, 390))
+                            action = adb.unit_action(x=random_x, y=random_y, mod="move", ratio=None)
                             adb.runtime_write("last_unit_action", action)
                             adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                             if action is True:
@@ -3226,66 +3255,78 @@ def run_one_adb(itr, adb):
 
 
                     if (not skip_resource_farming) and zero_count > 1 and not is_blocked_time:
-                        # 자원 채취
+
                         bread_value, wood_value, stone_value, iron_value = adb.resource_remain()
-                        print(f"adb{itr} : {bread_value/1e+6}, {wood_value/1e+6}, {stone_value/1e+6}, {iron_value/1e+6}")
+                        # print(f"adb : {bread_value/1e+6}, {wood_value/1e+6}, {stone_value/1e+6}, {iron_value/1e+6}")
                         stone_value = stone_value * 5
                         iron_value = iron_value * 20
 
 
-
-                    
-
                         time.sleep(3)
 
                         # 이미 수집중인 자원 배제
-                        resource_list = [bread_value, wood_value, stone_value, iron_value]
+                        resource_values = {
+                            "빵": bread_value,
+                            "목재": wood_value,
+                            "석재": stone_value,
+                            "철광": iron_value,
+                        }
+
+                        resource_list = ["빵", "목재", "석재", "철광"]
+
                         for resource_ex in state[1]:
                             if not isinstance(resource_ex, str):
                                 continue
                             if "빵" in resource_ex :
                                 try:
-                                    resource_list.remove(bread_value)
+                                    resource_list.remove("빵")
                                 except ValueError:
                                     pass
                             elif "목재" in resource_ex :
                                 try:
-                                    resource_list.remove(wood_value)
+                                    resource_list.remove("목재")
                                 except ValueError:
                                     pass
                             elif "석재" in resource_ex :
                                 try:
-                                    resource_list.remove(stone_value)
+                                    resource_list.remove("석재")
                                 except ValueError:
                                     pass
                             elif "철광" in resource_ex :
                                 try:
-                                    resource_list.remove(iron_value)
+                                    resource_list.remove("철광")
                                 except ValueError:
                                     pass
 
-                        if resource_list == [] :
-                            resource_list = [bread_value, wood_value, stone_value, iron_value]
 
-                        min_value = min(resource_list)
+                        # if resource_list == []:
+                        #     resource_list = ["빵", "목재", "석재", "철광"]
 
-                        if min_value == bread_value:
-                            resource = "빵"
-                        elif min_value == wood_value:
-                            resource = "목재"
-                        elif min_value == stone_value:
-                            resource = "석재"
-                        else:
-                            resource = "철광"
+                        # 남은 후보 중 최솟값 리소스 선택
 
+
+                        if resource_list is not [] :
+                            min_value = min(resource_values[name] for name in resource_list)
+                            if min_value == bread_value:
+                                resource = "빵"
+                            elif min_value == wood_value:
+                                resource = "목재"
+                            elif min_value == stone_value:
+                                resource = "석재"
+                            else:
+                                resource = "철광"
+                        elif resource_list is [] :
+                            resource = None
+                        
                         while True :
                             # 비정상 화면 해결
                             state = adb.get_state()
                             if state["action"] == False :
                                 break
                             time.sleep(1)
-
-                        result = adb.resource_farming(resource=resource)
+                        
+                        if resource is not None :
+                            result = adb.resource_farming(resource=resource)
 
                     # 전망대 이벤트
                     hunt_event = False
@@ -3305,13 +3346,13 @@ def run_one_adb(itr, adb):
 
                         # 괴수 사냥
                         # if adb.runtime_read("stamina", 0) > 60 and is_blocked_time == False : # 사냥
-                        if adb.runtime_read("stamina", 0) > 80:
+                        if adb.runtime_read("stamina", 0) > 100:
 
-                            if adb.port in (5555, 5556) and account == 0 and is_kst_hunting_forbidden :
+                            if adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 0 and not is_kst_hunting_forbidden :
                                 adb.hunting2(level=4)
-                            elif adb.port in (5555, 5556) and account == 1 :
+                            elif adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 1 :
                                 adb.hunting2(level=3)
-                            else : 
+                            elif adb.port not in (5555, 5556) :
                                 adb.hunting2(level=3)
 
                         # 전군 돌격 끝나면 철수
@@ -3337,7 +3378,16 @@ def run_one_adb(itr, adb):
         
             # 계정 변경
             # itr 5에서 종료되면 6으로 넘어가버리는 경우 있어서 itr == 5로 조건 걸면 안됨
-            if adb.port in [5555, 5556, 5675, 5685, 5695, 5705] and itrr >= 5:
+            # 5555/5556 + 본계(account 0) + itrr<10 이면 계정 전환 스킵(이번 루프는 elif/else로 진행)
+            if (
+                (
+                    (adb.port in [5675, 5685, 5695, 5705] and itrr >= 5)
+                    or
+                    (adb.port in [5555, 5556] and adb.runtime_read("account", -1) != 0 and itrr >= 5)
+                    or
+                    (adb.port in [5555, 5556] and adb.runtime_read("account", -1) == 0 and itrr >= 15)
+                )
+            ):
 
                 if check_abnormal(adb) in (5, 10) :
                     time.sleep(0.5)
@@ -3378,9 +3428,11 @@ def run_one_adb(itr, adb):
                     adb.itr = 0
                 switching += 1
                 adb.runtime_write("itrr", itrr := 0)
-            # 부계정 없는 경우우
-            elif itrr >= 5 :
+
+            # 부계정 없는 경우
+            elif itrr >= 5 and adb.port not in [5555, 5556] :
                 adb.runtime_write("itrr", itrr := 0)
+                
             else :
                 # 이 adb의 루프 카운트 +1 (각자 따로 돔)
                 loop_count[itr] = loop_count.get(itr, 0) + 1
