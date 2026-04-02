@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 
 
-def heal(adb) :
+def heal(adb, fast_heal=False) :
 
     # state 기록록
     adb.runtime_write("state", "heal")
@@ -79,11 +79,13 @@ def heal(adb) :
 
     result = adb.get_ocr_raw(file_name="capture_heal.png", x_min=365, x_max=415, y_min=670, y_max=705, y_threshold=10, scale=3)
     processed_result = adb.process_ocr(result=result, x_min=365, x_max=415, y_min=670, y_max=705, y_threshold=10, scale=3, merge=True)
+    
 
     has_heal = any("치료" in str(item[0]) for item in processed_result)
+
     
     # 힐 버튼 인식 됐을 경우 다음 진행
-    if has_heal == True :
+    if has_heal == True and fast_heal == False :
         adb.tap(100,700) # 빠른 선택
         time.sleep(0.5)
         adb.tap(100,700) # 빠른 선택
@@ -97,11 +99,50 @@ def heal(adb) :
         time.sleep(1)
         adb.back()
         return True
+
+    elif has_heal == True and fast_heal != False :
+
+        adb.tap(100,700) # 빠른 선택
+        time.sleep(0.5)
+        adb.tap(100,700) # 빠른 선택
+        time.sleep(0.5)
+        adb.tap(100,700) # 빠른 선택
+        time.sleep(0.5)
+        adb.tap(230,300) # 슬라이드 선택
+        time.sleep(0.5)
+        adb.tap(400,300) # 병력 숫자 선택
+        time.sleep(0.5)
+        adb.adb_backspace(4)
+        time.sleep(0.5)
+        fast_heal_str = str(fast_heal)
+        for idx, text in enumerate(fast_heal_str):
+            if idx == len(fast_heal_str) - 1:
+                adb.adb_input_text(text, press_enter=True)
+            else:
+                adb.adb_input_text(text, press_enter=False)
+            time.sleep(0.5)
+
+        count = 0
+
+        while True :
+            adb.tap(390,700) # 치료 버튼 
+            adb.tap(390,700) # 연맹 협조
+            count += 1
+            if count % 20 == 0 :
+                time.sleep(0.1)
+                adb.screen_shot(name="_heal")
+                result = adb.get_ocr_raw(file_name="capture_heal.png", x_min=330, x_max=445, y_min=670, y_max=720, y_threshold=10, scale=3)
+                processed_result = adb.process_ocr(result=result, x_min=330, x_max=445, y_min=670, y_max=720, y_threshold=10, scale=3, merge=True)
+                check = any(any(keyword in str(item[0]) for keyword in ("치료", "연맹", "협조")) for item in processed_result)
+                # print(count, check)
+                if check == False :
+                    return True
+
     elif has_heal == False :
-        return False
+        return 20
 
 
-def unit_action(adb, x, y, mod, all_troops=False, human_attack=False) :
+def unit_action(adb, x, y, mod, all_troops=False, human_attack=False, state=None, ratio=None, preset=None) :
 
     def _update_global_unit_coords(add=True):
         # automation.py 직접 실행 시 모듈명이 __main__ 이라서 분기
@@ -150,8 +191,14 @@ def unit_action(adb, x, y, mod, all_troops=False, human_attack=False) :
         state["unit_action_coords"] = coords
         save_runtime_state(state)
 
-    if adb.heal() > 0 :
-        return 5
+
+    if adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 0 :
+        heal = adb.heal()
+    else :
+        heal = adb.heal(fast_heal=False)
+
+    if heal != False :
+        return "heal_processing"
 
     if mod == "move" :
         text = "점령"
@@ -189,13 +236,32 @@ def unit_action(adb, x, y, mod, all_troops=False, human_attack=False) :
     processed_result = adb.process_ocr(result=ocr_result, x_min=5, x_max=185, y_min=175, y_max=540, y_threshold=10, scale=1, merge=False)
 
     if mod == "back_all" :
-        for item in processed_result :
-            if "주둔" in item[0] :
-                adb.tap(165, item[2])
+        if state is None :
+            for item in processed_result :
+                if "주둔" in item[0] :
+                    adb.tap(165, item[2])
+                    time.sleep(1)
+                    adb.tap(385,590) # 소환 확인
+        elif state is not None :
+            indices = [i for i, v in enumerate(state) if v == 3]
+            for ind in indices :
+                if ind == 0 :
+                    adb.tap(165,200)
+                elif ind == 1 :
+                    adb.tap(165,245)
+                elif ind == 2 :
+                    adb.tap(165,290)
+                elif ind == 3 :
+                    adb.tap(165,335)
+                elif ind == 4 :
+                    adb.tap(165,385)
+                elif ind == 5 :
+                    adb.tap(165,430)
                 time.sleep(1)
                 adb.tap(385,590) # 소환 확인
-    
-        return 10
+                time.sleep(1)
+
+        return "back_all_success"
 
     if mod == "attack" or mod == "move":
         for item in processed_result :
@@ -286,11 +352,57 @@ def unit_action(adb, x, y, mod, all_troops=False, human_attack=False) :
 
             flag = 0
             for item in processed_result:
-                if "균등" in item[0] or "배치" in item[0] :
+                if ("균등" in item[0]) and ratio == None :
                     adb.tap(item[1], item[2]-45) # 균등 배치 버튼 클릭
                     time.sleep(1*adb.time)
                     adb.tap(410,910) # 출정
                     time.sleep(2*adb.time)
+                    _update_global_unit_coords(add=True)
+                    return True
+
+                elif preset != None :
+                    if preset == 1 :
+                        adb.tap(40, 90)
+                    elif preset == 2 :
+                        adb.tap(95, 90)
+                    elif preset == 3 :
+                        adb.tap(150, 90)
+                    time.sleep(1)
+                    adb.tap(410,910) # 출정
+                    time.sleep(2*adb.time)
+
+                    _update_global_unit_coords(add=True)
+                    return True
+
+                elif ("비례" in item[0]) and ratio != None :
+                    
+                    adb.tap(item[1], item[2]-45) # 비례 배치 버튼 클릭
+                    time.sleep(1*adb.time)
+
+                    # 보병 비율
+                    adb.tap(450,400)
+                    time.sleep(0.5)
+                    adb.adb_backspace(2)
+                    adb.adb_input_text(f"{ratio}", press_enter=True)
+
+                    # 기병 비율
+                    adb.tap(450,510)
+                    time.sleep(0.5)
+                    adb.adb_backspace(2)
+                    adb.adb_input_text(f"{ratio}", press_enter=True)
+
+                    # 궁병 비율
+                    adb.tap(450,620)
+                    time.sleep(0.5)
+                    adb.adb_backspace(2)
+                    adb.adb_input_text(f"{ratio}", press_enter=True)
+
+                    adb.tap(270,730) # 확인
+                    time.sleep(1)
+
+                    adb.tap(410,910) # 출정
+                    time.sleep(2*adb.time)
+
                     _update_global_unit_coords(add=True)
                     return True
                 if "비례" in item[0] :
