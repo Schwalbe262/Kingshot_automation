@@ -1,3 +1,4 @@
+import csv
 import os
 import sys
 import time
@@ -5,6 +6,59 @@ from datetime import datetime
 
 import cv2
 import numpy as np
+
+
+def _runtime_project_root():
+    """module/ 상위 = 프로젝트 루트 (automation_state.json, unit_action.csv와 같은 기준)."""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _append_unit_action_csv(entry):
+    """좌표 기록을 뺄 때 통계용으로 unit_action.csv에 한 줄 append.
+
+    엑셀 등에서 열기 쉽게 utf-8-sig. 컬럼:
+      run_time: 이 함수가 돈 시각
+      port / account: JSON에 있던 값 (해당 에뮬 port 기준 계정)
+      x, y / recorded_time: 저장돼 있던 좌표·시각 문자열
+      delta_seconds: (지금) - (기록 시각), 초. time_ts 우선, 없으면 time 파싱
+    """
+    path = os.path.join(_runtime_project_root(), "unit_action.csv")
+    now_ts = int(time.time())
+    now_human = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 기록 시점과의 차이(초): time_ts가 있으면 그걸로 (문자열 파싱보다 안전)
+    ts = entry.get("time_ts")
+    if isinstance(ts, (int, float)):
+        delta_sec = int(now_ts - int(ts))
+    else:
+        tstr = entry.get("time") or ""
+        try:
+            dt = datetime.strptime(tstr, "%Y-%m-%d %H:%M:%S")
+            delta_sec = int(now_ts - dt.timestamp())
+        except (ValueError, TypeError):
+            delta_sec = ""
+
+    port = entry.get("port", "")
+    account = entry.get("account", "")
+    row = {
+        "run_time": now_human,
+        "port": port,
+        "account": account,
+        "x": entry.get("x", ""),
+        "y": entry.get("y", ""),
+        "recorded_time": entry.get("time", ""),
+        "delta_seconds": delta_sec,
+    }
+    fieldnames = ["run_time", "port", "account", "x", "y", "recorded_time", "delta_seconds"]
+    write_header = not os.path.exists(path) or os.path.getsize(path) == 0
+    try:
+        with open(path, "a", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=fieldnames)
+            if write_header:
+                w.writeheader()
+            w.writerow(row)
+    except OSError as e:
+        print(f"[WARN] unit_action.csv 기록 실패: {e}")
 
 
 def heal(adb, fast_heal=False) :
@@ -155,11 +209,30 @@ def unit_action(adb, x, y, mod, all_troops=False, human_attack=False, state=None
         if not isinstance(coords, list):
             coords = []
 
+        # 같은 port 정보 2개 초과면 오래된거 날림
+        def _trim_coords_by_port(coords_list):
+            by_port = {}
+            for i, c in enumerate(coords_list):
+                if isinstance(c, dict) and "port" in c:
+                    by_port.setdefault(c["port"], []).append(i)
+            remove_idx = set()
+            for indices in by_port.values():
+                if len(indices) < 3:
+                    continue
+                indexed = [(coords_list[i], i) for i in indices]
+                indexed.sort(key=lambda t: t[0].get("time_ts", 0), reverse=True)
+                for _, idx in indexed[2:]:
+                    remove_idx.add(idx)
+            if not remove_idx:
+                return coords_list
+            return [c for i, c in enumerate(coords_list) if i not in remove_idx]
+
         coord_x, coord_y = str(x), str(y)
         account = adb.runtime_read("account", -1) # 0일 때 본계정
 
+        coords = _trim_coords_by_port(coords)
 
-        if add:
+        if add == True:
             now_ts = int(time.time())
             now_human = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             coords = [
@@ -178,7 +251,28 @@ def unit_action(adb, x, y, mod, all_troops=False, human_attack=False, state=None
                 "port": adb.port,
                 "account": account
             })
-        else:
+        elif add == False:
+            # 좌표 삭제 전에 통계 한 줄 남김: 현재 기기(adb.port)와 같은 항목을 우선 사용
+            removed_for_stat = None
+            for c in coords:
+                if not isinstance(c, dict):
+                    continue
+                if str(c.get("x")) != coord_x or str(c.get("y")) != coord_y:
+                    continue
+                if c.get("port") == adb.port:
+                    removed_for_stat = c
+                    break
+            # 예전 데이터 등 port 불일치 시 (x,y)만 맞는 첫 항목으로 대체
+            if removed_for_stat is None:
+                for c in coords:
+                    if not isinstance(c, dict):
+                        continue
+                    if str(c.get("x")) == coord_x and str(c.get("y")) == coord_y:
+                        removed_for_stat = c
+                        break
+            if removed_for_stat is not None:
+                _append_unit_action_csv(removed_for_stat)
+
             coords = [
                 c for c in coords
                 if not (
@@ -188,6 +282,7 @@ def unit_action(adb, x, y, mod, all_troops=False, human_attack=False, state=None
                 )
             ]
 
+        coords = _trim_coords_by_port(coords)
         state["unit_action_coords"] = coords
         save_runtime_state(state)
 
@@ -286,7 +381,7 @@ def unit_action(adb, x, y, mod, all_troops=False, human_attack=False, state=None
 
     result = None
     flag = 0
-    # 배치, 소환, 공격 버튼 누르기기
+    # 배치, 소환, 공격 버튼 누르기
     if processed_result:
         for item in processed_result:
             # 여기서 걸리면 뭔가 있는 땅임
@@ -294,15 +389,19 @@ def unit_action(adb, x, y, mod, all_troops=False, human_attack=False, state=None
                 adb.back()
                 time.sleep(1)
                 if mod == "attack" :
-                     _update_global_unit_coords(add=False)
-                     return 200
+                    _update_global_unit_coords(add=False)
+                    return 200
                 else :
                     return False
-            # 여기서 걸리면 사람임
-            elif item[0] in ["집결", "섬", "방문"] and human_attack == False :
+            # 여기서 걸리면 사람임 (OCR에 추천이 있으면 괴수/추천 전투 화면)
+            elif (
+                item[0] in ["집결", "섬", "방문"]
+                and human_attack == False
+                and not any("추천" in x[0] for x in processed_result)
+            ):
                 adb.back()
                 time.sleep(1)
-                return False
+                return "Human"
             elif item[0] == text and mod != "attack":
                 # 원하는 기능의 동작 버튼 (ex>배치)
                 result = (item[1], item[2]-10)

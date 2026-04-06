@@ -32,6 +32,8 @@ import threading
 import shutil
 
 from module.battle import heal, unit_action
+from module.init_action import get_people
+from module.research import union_research
 
 
 ADB_COMMAND_TIMEOUT_SEC = 20
@@ -874,17 +876,7 @@ class ADB:
             return False
 
     def get_people(self) :
-
-        self.tap(470,610)
-        time.sleep(1)
-        self.screen_shot(name="_people")
-
-        result = self.get_ocr_raw(file_name="capture_people.png", x_min=210, x_max=330, y_min=820, y_max=860, y_threshold=10, scale=1)
-        processed_result = self.process_ocr(result=result, x_min=210, x_max=330, y_min=820, y_max=860, y_threshold=10, scale=1, merge=True)
-
-        if processed_result :
-            self.tap(270,840)
-            time.sleep(5)
+        get_people(self)
 
     def get_VIP(self) :
 
@@ -979,7 +971,7 @@ class ADB:
 
             if "고급모" in curr_text and "무료모" in next_text:
                 curr_val = float(processed_result[i][2])      # 고급모집의 2번 인덱스
-                print(curr_val)
+                # print(curr_val)
                 next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
                 target_avg = (curr_val + next_val) / 2.0
                 self.tap(305, target_avg) # 모집 버튼 누르기
@@ -993,7 +985,7 @@ class ADB:
                 break
             elif "에픽모" in curr_text and "무료모" in next_text:
                 curr_val = float(processed_result[i][2])      # 에픽픽모집의 2번 인덱스
-                print(curr_val)
+                # print(curr_val)
                 next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
                 target_avg = (curr_val + next_val) / 2.0
                 self.tap(305, target_avg) # 모집 버튼 누르기
@@ -1060,7 +1052,7 @@ class ADB:
 
             result = self.get_ocr_raw(file_name="capture_quest.png", x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=3)
             processed_result = self.process_ocr(result=result, x_min=360, x_max=530, y_min=200, y_max=750, y_threshold=10, scale=3, merge=True)
-            print(processed_result)
+            # print(processed_result)
 
             for item in processed_result:
                 if item[0] == "수령":
@@ -1081,84 +1073,7 @@ class ADB:
                 break
 
     def union_research(self) :
-
-        self.tap(10,415)
-        time.sleep(1)
-        self.drag_with_adb(170, 625, 170, 275, duration_ms=800)
-        time.sleep(1)
-        self.screen_shot(name="_union_research")
-
-        result = self.get_ocr_raw(file_name="capture_union_research.png", x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3)
-        processed_result = self.process_ocr(result=result, x_min=5, x_max=325, y_min=250, y_max=645, y_threshold=10, scale=3, merge=True)
-
-
-        target_avg = None  # 결과를 담을 변수
-
-        for i in range(len(processed_result) - 1):
-            curr_text = str(processed_result[i][0]).replace(" ", "")      # 현재 원소 text (공백 제거)
-            next_text = str(processed_result[i + 1][0]).replace(" ", "")  # 다음 원소 text (공백 제거)
-
-            if "기부" in curr_text and "가능" in next_text:
-                curr_val = float(processed_result[i][2])      # 고급모집의 2번 인덱스
-                next_val = float(processed_result[i + 1][2])  # 무료모집의 2번 인덱스
-                target_avg = (curr_val + next_val) / 2.0
-                self.tap(300, target_avg) # 연맹 기부 버튼 누르기
-                time.sleep(1)
-                self.tap(400, 920) # 연맹 버튼 누르기
-                time.sleep(3)
-                self.tap(420, 700) # 연맹 과학 기술 버튼 누르기
-                time.sleep(0.5)
-                break
-            else :
-                pass
-        else:
-            self.tap(355,415)
-            return False
-
-
-        time.sleep(1)
-        self.tap(510,530)
-        time.sleep(1)
-
-        self.screen_shot(name="_union_research_queue")
-
-        result = self.get_ocr_raw_advanced(file_name="capture_union_research_queue.png", x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, binary_threshold=170)
-        processed_result = self.process_ocr(result=result, x_min=30, x_max=510, y_min=235, y_max=950, y_threshold=10, scale=3, merge=False)
-
-        pattern = r"^\d+/\d+$"
-        for item in processed_result:
-
-            x = 0
-            y = 0
-
-            if re.match(pattern, item[0].replace(" ", "")):
-
-                x = item[1]
-                y = item[2]
-
-                if x != 0 and y != 0 :
-                    self.tap(x,y)
-                    time.sleep(1)
-
-                    self.screen_shot(name="_union_done")
-                    result = self.get_ocr_raw_advanced(file_name="capture_union_done.png", x_min=295, x_max=475, y_min=690, y_max=820, y_threshold=10, scale=3, binary_threshold=170)
-                    processed_result = self.process_ocr(result=result, x_min=295, x_max=475, y_min=690, y_max=820, y_threshold=10, scale=3, merge=False)
-
-                    for item in processed_result:
-                        if "기부" in str(item[0]):
-                            x = item[1]
-                            y = item[2]
-                            for _ in range(10):
-                                self.tap(385,765) # 기부 버튼
-                                time.sleep(0.5)
-                            self.back()
-                            time.sleep(1)
-                            self.back()
-                            # print(f"adb{self.itr} 연맹 연구 기여 완료")
-                            return True
-                    else :
-                        self.back()
-                        time.sleep(1)
+        return union_research(self)
 
     def get_supply(self) :
 
@@ -1183,7 +1098,7 @@ class ADB:
 
             if ("창고" in curr_text or "보급" in curr_text) and "완료" in next_text:
                 curr_val = float(processed_result[i][2])      # y좌표
-                print(curr_val)
+                # print(curr_val)
                 next_val = float(processed_result[i + 1][2])  # y좌표
                 target_avg = (curr_val + next_val) / 2.0
                 self.tap(305, target_avg) # 보급품 수령 버튼튼
@@ -1286,9 +1201,6 @@ class ADB:
             if any(keyword in curr_text for keyword in ["주둔"]):
                 result_s2.append("주둔")
                 index = index + 1
-            elif any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격", "집결", "대기", "이동"]):
-                result_s2.append(next_text)
-                index = index + 1
             elif any(keyword in curr_text for keyword in ["방앗", "앗간"]):
                 result_s2.append("빵")
                 index = index + 1
@@ -1300,6 +1212,9 @@ class ADB:
                 index = index + 1
             elif any(keyword in curr_text for keyword in ["철광", "광장"]):
                 result_s2.append("철광")
+                index = index + 1
+            elif any(keyword in curr_text for keyword in ["행군", "대열", "복귀", "공격", "집결", "대기", "이동", "건설", "수비"]):
+                result_s2.append(next_text)
                 index = index + 1
             elif any(keyword in curr_text for keyword in ["비어", "채집"]):
                 result_s2.append("채집")
@@ -2943,10 +2858,6 @@ def run_one_adb(itr, adb):
                     adb.get_VIP()
                     time.sleep(1)
 
-                    check_abnormal(adb)
-                    adb.get_people()
-                    time.sleep(1)
-
                 # 4의 배수 시간마다 실행
                 now_hour = datetime.now().hour
                 if now_hour % 4 == 0:
@@ -2962,6 +2873,10 @@ def run_one_adb(itr, adb):
                     adb.union_reward()
                     time.sleep(1)
 
+
+                check_abnormal(adb)
+                adb.get_people()
+                time.sleep(1)
 
                 check_abnormal(adb)
                 if adb.check_help() == True :
@@ -3086,10 +3001,12 @@ def run_one_adb(itr, adb):
                     time.sleep(1)
 
 
-                if adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 0 :
+                # if adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 0 :
+                if adb.port in (5555, 5556) :  
                     lower = False
                 else :
-                    lower = True
+                    lower = False
+                    # lower = True
 
                 
 
@@ -3122,7 +3039,7 @@ def run_one_adb(itr, adb):
                 time.sleep(1)
 
 
-            if itrr % 3 == 0 :
+            if itrr % 1000 == 0 :
                 adb.union_research()
                 time.sleep(1)
 
@@ -3158,6 +3075,7 @@ def run_one_adb(itr, adb):
                     result2 = None
 
 
+
                 if result1 == "out" or result2 == "in" : # out 버튼이 뜨는 경우 (도시 안에 있는 경우)
                     adb.tap(490,910) # 야외로 나가기
                     time.sleep(5)
@@ -3172,8 +3090,10 @@ def run_one_adb(itr, adb):
                         action = adb.unit_action(x="545", y="260", mod="back_all", state=state[1])
                         adb.runtime_write("last_unit_action", action)
                         adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+
                     # unit action
-                    elif 1 :
+                    if 1 :
                         # 공격
                         if adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 0 :
                             def _get_oldest_valid_attack_coord():
@@ -3203,7 +3123,7 @@ def run_one_adb(itr, adb):
                                             continue
                                     if x_val is None or y_val is None:
                                         continue
-                                    if now_ts - ts >= 600: # 출발로부터 몇초 지나야 유효하게 볼건지
+                                    if now_ts - ts >= 540: # 출발로부터 몇초 지나야 유효하게 볼건지
                                         valid_coords.append((ts, str(x_val), str(y_val)))
 
                                 if not valid_coords:
@@ -3244,14 +3164,16 @@ def run_one_adb(itr, adb):
                             if action is True:
                                 skip_resource_farming = True
 
+                        # farm 계정
                         elif adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 1 and three_count == 0 :
-                            random_x = str(random.randint(475, 485))
-                            random_y = str(random.randint(380, 390))
-                            action = adb.unit_action(x=random_x, y=random_y, mod="move", ratio=None, preset=1)
-                            adb.runtime_write("last_unit_action", action)
-                            adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                            if action is True:
-                                skip_resource_farming = True
+                            # random_x = str(random.randint(475, 485))
+                            # random_y = str(random.randint(380, 390))
+                            # action = adb.unit_action(x=random_x, y=random_y, mod="move", ratio=None, preset=1)
+                            # adb.runtime_write("last_unit_action", action)
+                            # adb.runtime_write("last_unit_action_time", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                            # if action is True:
+                            #     skip_resource_farming = True
+                            nya = 1
                                         
                         elif (adb.port not in (5555, 5556) and three_count == 0) or (adb.port in (5555, 5556) and adb.runtime_read("account", -1) == 1 and three_count == 0) :
                             random_x = str(random.randint(475, 485))
@@ -3381,9 +3303,9 @@ def run_one_adb(itr, adb):
             # 5555/5556 + 본계(account 0) + itrr<10 이면 계정 전환 스킵(이번 루프는 elif/else로 진행)
             if (
                 (
-                    (adb.port in [5675, 5685, 5695, 5705] and itrr >= 5)
+                    (adb.port in [5675, 5685, 5695, 5705] and itrr >= 3)
                     or
-                    (adb.port in [5555, 5556] and adb.runtime_read("account", -1) != 0 and itrr >= 5)
+                    (adb.port in [5555, 5556] and adb.runtime_read("account", -1) != 0 and itrr >= 3)
                     or
                     (adb.port in [5555, 5556] and adb.runtime_read("account", -1) == 0 and itrr >= 15)
                 )
