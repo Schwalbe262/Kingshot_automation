@@ -33,7 +33,7 @@ import shutil
 
 from module.battle import heal, unit_action
 from module.init_action import get_people
-from module.research import union_research
+from module.union import union_research, union_cheer
 
 
 ADB_COMMAND_TIMEOUT_SEC = 20
@@ -1074,6 +1074,9 @@ class ADB:
 
     def union_research(self) :
         return union_research(self)
+
+    def union_cheer(self) :
+        return union_cheer(self)
 
     def get_supply(self) :
 
@@ -2856,6 +2859,10 @@ def run_one_adb(itr, adb):
                 if 8 <= current_hour <= 10:
                     check_abnormal(adb)
                     adb.get_VIP()
+                    time.sleep(1)
+
+                    check_abnormal(adb)
+                    adb.union_cheer()
                     time.sleep(1)
 
                 # 4의 배수 시간마다 실행

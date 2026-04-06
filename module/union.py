@@ -9,8 +9,11 @@ def _enter_union_tap(adb, mod="None"):
     adb.tap(400, 920)  # 연맹 버튼 누르기
     time.sleep(2)
 
-    if mod == "science":
+    # 연맹 과학 기술
+    if mod == "science" :
         adb.tap(420, 700)  # 연맹 과학 기술 버튼 누르기
+    if mod == "cheer" :
+        adb.tap(270, 900)  # 격려 버튼 누르기
     else:
         pass
 
@@ -92,23 +95,44 @@ def union_research(adb):
                     adb.tap(385, 765)  # 기부 버튼
                     time.sleep(0.5)
                 adb.back()
-                time.sleep(0.5)
+                time.sleep(1)
                 adb.back()
-                time.sleep(0.5)
+                time.sleep(1)
                 adb.back()
-                time.sleep(0.5)
+                time.sleep(1)
                 return True
+        # 기부 버튼이 인식이 안되는 경우
         else:
             adb.back()
-            time.sleep(0.5)
+            time.sleep(1)
             adb.back()
-            time.sleep(0.5)
+            time.sleep(1)
+            return False
 
     # 인식 안된 경우
     else :
         adb.back()
-        time.sleep(0.5)
+        time.sleep(1)
         adb.back()
-        time.sleep(0.5)
+        time.sleep(1)
         return False
 
+
+def union_cheer(adb) :
+
+    # 연맹 버튼 누르기
+    _enter_union_tap(adb, mod="cheer")
+
+    # 주간 격려
+    adb.tap(290,335)
+    time.sleep(2)
+    adb.tap(290,335)
+    time.sleep(2)
+
+    # 일간 격려
+    adb.tap(290,650)
+    time.sleep(2)
+    adb.tap(290,650)
+    time.sleep(2)
+
+ 
